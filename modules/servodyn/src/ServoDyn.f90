@@ -1930,7 +1930,7 @@ CONTAINS
          m%dll_data%PrevCableDeltaLdot(1:p%NumCableControl) = m%dll_data%CableDeltaLdot(1:p%NumCableControl)
       endif
       ! for StC active controls:
-      if (p%NumStC_Control > 0) then
+      if (p%NumStC_Control > 0 .and. p%StCCMode == ControlMode_DLL) then
          m%dll_data%PrevStCCmdStiff(1:3,1:p%NumStC_Control) = m%dll_data%StCCmdStiff(1:3,1:p%NumStC_Control)
          m%dll_data%PrevStCCmdDamp( 1:3,1:p%NumStC_Control) = m%dll_data%StCCmdDamp( 1:3,1:p%NumStC_Control)
          m%dll_data%PrevStCCmdBrake(1:3,1:p%NumStC_Control) = m%dll_data%StCCmdBrake(1:3,1:p%NumStC_Control)
@@ -4726,7 +4726,7 @@ subroutine StC_SetDLLinputs(p,m,MeasDisp,MeasVel,ErrStat,ErrMsg,InitResize)
    if (allocated(MeasVel))    MeasVel  = 0.0_SiKi
 
       ! Only proceed if we have have StC controls with the extended swap and legacy interface
-   if ((p%NumStC_Control <= 0) .or. (.not. p%EXavrSWAP))    return
+   if ((p%NumStC_Control <= 0) .or. (.not. p%EXavrSWAP) .or. (p%StCCMode /= ControlMode_DLL))    return
    if (.not. allocated(MeasDisp) .or. .not. allocated(MeasVel)) then
       ErrStat2 = ErrID_Fatal
       ErrMsg2  = "StC control signal matrices not allocated.  Programming error somewhere."
@@ -4855,8 +4855,8 @@ subroutine StC_SetInitDLLinputs(p,m,InitStiff,InitDamp,InitBrake,InitForce,InitM
    ErrStat = ErrID_None
    ErrMsg  = ""
 
-      ! Only proceed if we have have StC controls with the extended swap
-   if ((p%NumStC_Control <= 0) .or. (.not. p%EXavrSWAP))    return
+      ! Only proceed if we have StC controls with DLL mode and extended swap
+   if ((p%NumStC_Control <= 0) .or. (.not. p%EXavrSWAP) .or. (p%StCCMode /= ControlMode_DLL))    return
    if ((.not. allocated(InitStiff)) .or. (.not. allocated(InitDamp)) .or. (.not. allocated(InitBrake)) .or. (.not. allocated(InitForce)) .or. (.not. allocated(InitMoment))) then
       ErrStat2 = ErrID_Fatal
       ErrMsg2  = "StC control signal matrices not allocated.  Programming error somewhere."
