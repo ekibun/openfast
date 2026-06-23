@@ -7980,7 +7980,15 @@ SUBROUTINE SrvD_SetExternalInputs(p_FAST, m_FAST, u_SrvD)
    end if
 
    ! StC controls
-   ! This is a placeholder for where StC controls would be passed if they are enabled from Simulink
+   if (ALLOCATED(u_SrvD%ExternalStCCmdStiff)) then
+      do i=1,SIZE(u_SrvD%ExternalStCCmdStiff,2)
+         u_SrvD%ExternalStCCmdStiff(1:3,i) = m_FAST%ExternInput%StCCmdStiff((i-1)*3+1:(i-1)*3+3)
+         u_SrvD%ExternalStCCmdDamp( 1:3,i) = m_FAST%ExternInput%StCCmdDamp( (i-1)*3+1:(i-1)*3+3)
+         u_SrvD%ExternalStCCmdBrake(1:3,i) = m_FAST%ExternInput%StCCmdBrake((i-1)*3+1:(i-1)*3+3)
+         u_SrvD%ExternalStCCmdForce(1:3,i) = m_FAST%ExternInput%StCCmdForce((i-1)*3+1:(i-1)*3+3)
+         u_SrvD%ExternalStCCmdMoment(1:3,i)= m_FAST%ExternInput%StCCmdMoment((i-1)*3+1:(i-1)*3+3)
+      end do
+   end if
 
 END SUBROUTINE SrvD_SetExternalInputs
 

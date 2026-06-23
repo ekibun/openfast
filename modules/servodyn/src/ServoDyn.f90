@@ -461,6 +461,28 @@ SUBROUTINE SrvD_Init( InitInp, u, p, x, xd, z, OtherState, y, m, Interval, InitO
       u%ExternalCableDeltaLdot = 0.0_ReKi
    endif
 
+      !............................................................................................
+      ! Setup and initialize the StC external control inputs -- from Simulink
+      !............................................................................................
+   if (p%NumStC_Control > 0 .and. p%StCCMode == ControlMode_EXTERN) then
+      call AllocAry( u%ExternalStCCmdStiff,  3, p%NumStC_Control, 'ExternalStCCmdStiff', ErrStat2, ErrMsg2 )
+         if (Failed())  return
+      call AllocAry( u%ExternalStCCmdDamp,   3, p%NumStC_Control, 'ExternalStCCmdDamp' , ErrStat2, ErrMsg2 )
+         if (Failed())  return
+      call AllocAry( u%ExternalStCCmdBrake,  3, p%NumStC_Control, 'ExternalStCCmdBrake', ErrStat2, ErrMsg2 )
+         if (Failed())  return
+      call AllocAry( u%ExternalStCCmdForce,  3, p%NumStC_Control, 'ExternalStCCmdForce', ErrStat2, ErrMsg2 )
+         if (Failed())  return
+      call AllocAry( u%ExternalStCCmdMoment, 3, p%NumStC_Control, 'ExternalStCCmdMoment', ErrStat2, ErrMsg2 )
+         if (Failed())  return
+
+      u%ExternalStCCmdStiff  = 0.0_ReKi
+      u%ExternalStCCmdDamp   = 0.0_ReKi
+      u%ExternalStCCmdBrake  = 0.0_ReKi
+      u%ExternalStCCmdForce  = 0.0_ReKi
+      u%ExternalStCCmdMoment = 0.0_ReKi
+   endif
+
 
 
       !............................................................................................
@@ -1415,19 +1437,23 @@ subroutine StC_CtrlChan_Setup(m,p,CtrlChanInitInfo,UnSum,ErrStat,ErrMsg)
    p%StCCMode        = 0_IntKi
    do i=1,p%NumBStC  ! Blade
       p%NumStC_Control = max(p%NumStC_Control,maxval(p%BStC(i)%StC_CChan))
-      if (p%BStC(i)%StC_CMode == ControlMode_DLL)  p%StCCMode  = ControlMode_DLL
+      if (p%BStC(i)%StC_CMode == ControlMode_DLL)     p%StCCMode  = ControlMode_DLL
+      if (p%BStC(i)%StC_CMode == ControlMode_EXTERN)  p%StCCMode  = ControlMode_EXTERN
    enddo
    do i=1,p%NumNStC  ! Nacelle
       p%NumStC_Control = max(p%NumStC_Control,maxval(p%NStC(i)%StC_CChan))
-      if (p%NStC(i)%StC_CMode == ControlMode_DLL)  p%StCCMode  = ControlMode_DLL
+      if (p%NStC(i)%StC_CMode == ControlMode_DLL)     p%StCCMode  = ControlMode_DLL
+      if (p%NStC(i)%StC_CMode == ControlMode_EXTERN)  p%StCCMode  = ControlMode_EXTERN
    enddo
    do i=1,p%NumTStC  ! Tower
       p%NumStC_Control = max(p%NumStC_Control,maxval(p%TStC(i)%StC_CChan))
-      if (p%TStC(i)%StC_CMode == ControlMode_DLL)  p%StCCMode  = ControlMode_DLL
+      if (p%TStC(i)%StC_CMode == ControlMode_DLL)     p%StCCMode  = ControlMode_DLL
+      if (p%TStC(i)%StC_CMode == ControlMode_EXTERN)  p%StCCMode  = ControlMode_EXTERN
    enddo
    do i=1,p%NumSStC  ! SubStructure
       p%NumStC_Control = max(p%NumStC_Control,maxval(p%SStC(i)%StC_CChan))
-      if (p%SStC(i)%StC_CMode == ControlMode_DLL)  p%StCCMode  = ControlMode_DLL
+      if (p%SStC(i)%StC_CMode == ControlMode_DLL)     p%StCCMode  = ControlMode_DLL
+      if (p%SStC(i)%StC_CMode == ControlMode_EXTERN)  p%StCCMode  = ControlMode_EXTERN
    enddo
 
    if (p%NumStC_Control==0) then
@@ -1716,7 +1742,7 @@ SUBROUTINE SrvD_UpdateStates( t, n, Inputs, InputTimes, p, x, xd, z, OtherState,
       call AllocAry(StC_CmdBrake, 3, p%NumStC_Control, 'StC_CmdBrake', ErrStat2, ErrMsg2 );  if (Failed()) return;
       call AllocAry(StC_CmdForce, 3, p%NumStC_Control, 'StC_CmdForce', ErrStat2, ErrMsg2 );  if (Failed()) return;
       call AllocAry(StC_CmdMoment,3, p%NumStC_Control, 'StC_CmdMoment',ErrStat2, ErrMsg2 );  if (Failed()) return;
-      call StCControl_CalcOutput( t_next, p, StC_CmdStiff, StC_CmdDamp, StC_CmdBrake, StC_CmdForce, StC_CmdMoment, m, ErrStat2, ErrMsg2 )
+      call StCControl_CalcOutput( t_next, u_interp, p, StC_CmdStiff, StC_CmdDamp, StC_CmdBrake, StC_CmdForce, StC_CmdMoment, m, ErrStat2, ErrMsg2 )
          if (Failed()) return;
    endif
 
@@ -2008,7 +2034,7 @@ SUBROUTINE SrvD_CalcOutput( t, u, p, x, xd, z, OtherState, y, m, ErrStat, ErrMsg
       call AllocAry(StC_CmdBrake, 3, p%NumStC_Control, 'StC_CmdBrake', ErrStat2, ErrMsg2 );  if (Failed()) return;
       call AllocAry(StC_CmdForce, 3, p%NumStC_Control, 'StC_CmdForce', ErrStat2, ErrMsg2 );  if (Failed()) return;
       call AllocAry(StC_CmdMoment,3, p%NumStC_Control, 'StC_CmdMoment',ErrStat2, ErrMsg2 );  if (Failed()) return;
-      call StCControl_CalcOutput( t, p, StC_CmdStiff, StC_CmdDamp, StC_CmdBrake, StC_CmdForce, StC_CmdMoment, m, ErrStat2, ErrMsg2 )
+      call StCControl_CalcOutput( t, u, p, StC_CmdStiff, StC_CmdDamp, StC_CmdBrake, StC_CmdForce, StC_CmdMoment, m, ErrStat2, ErrMsg2 )
          if (Failed()) return;
    endif
    do j=1,p%NumBStC       ! Blades
@@ -4603,8 +4629,9 @@ END SUBROUTINE CableControl_CalcOutput
 !  Commanded Airfoil UserProp for blade (must be same units as given in AD15 airfoil tables)
 !  This is passed to AD15 to be interpolated with the airfoil table userprop column
 !  (might be used for airfoil flap angles for example)
-SUBROUTINE StCControl_CalcOutput( t, p, StC_CmdStiff, StC_CmdDamp, StC_CmdBrake, StC_CmdForce, StC_CmdMoment, m, ErrStat, ErrMsg )
+SUBROUTINE StCControl_CalcOutput( t, u, p, StC_CmdStiff, StC_CmdDamp, StC_CmdBrake, StC_CmdForce, StC_CmdMoment, m, ErrStat, ErrMsg )
    REAL(DbKi),                     INTENT(IN   )  :: t                  !< Current simulation time in seconds
+   TYPE(SrvD_InputType),           INTENT(IN   )  :: u                  !< Inputs at t
    TYPE(SrvD_ParameterType),       INTENT(IN   )  :: p                  !< Parameters
    REAL(ReKi),    ALLOCATABLE,     INTENT(INOUT)  :: StC_CmdStiff(:,:)  !< StC_CmdStiff command signals (3,p%NumStC_Control)
    REAL(ReKi),    ALLOCATABLE,     INTENT(INOUT)  :: StC_CmdDamp(:,:)   !< StC_CmdDamp  command signals (3,p%NumStC_Control)
@@ -4620,8 +4647,11 @@ SUBROUTINE StCControl_CalcOutput( t, p, StC_CmdStiff, StC_CmdDamp, StC_CmdBrake,
       ErrStat = ErrID_None
       ErrMsg  = ""
 
-         ! Only proceed if we have have StC controls with the extended swap and legacy interface
-      if ((p%NumStC_Control <= 0) .or. (.not. p%EXavrSWAP))    return
+         ! Only proceed if we have StC controls and a valid control mode
+      if ((p%NumStC_Control <= 0) .or. &
+          (p%StCCMode /= ControlMode_DLL .and. p%StCCMode /= ControlMode_EXTERN))    return
+         ! DLL mode requires the extended avrSWAP
+      if ((p%StCCMode == ControlMode_DLL) .and. (.not. p%EXavrSWAP))    return
       if (.not. allocated(StC_CmdStiff) .or. .not. allocated(StC_CmdDamp) .or. .not. allocated(StC_CmdBrake) .or. .not. allocated(StC_CmdForce) .or. .not. allocated(StC_CmdMoment)) then
          ErrStat = ErrID_Fatal
          ErrMsg  = "StC control signal matrices not allocated.  Programming error somewhere."
@@ -4629,37 +4659,46 @@ SUBROUTINE StCControl_CalcOutput( t, p, StC_CmdStiff, StC_CmdDamp, StC_CmdBrake,
       endif
 
       !...................................................................
-      ! Calculate the cable control channels -- NOTE: each StC instance will only use the channel data if StC_CMODE is set to
+      ! Calculate the StC control channels -- NOTE: each StC instance will only use the channel data if StC_CMODE is set to
       !...................................................................
-         ! User-defined cable control from Bladed-style DLL
-      if (p%DLL_Ramp) then
-         factor = (t - m%LastTimeCalled) / m%dll_data%DLL_DT
-         if (allocated(StC_CmdStiff)) then
-            StC_CmdStiff(1:3,1:p%NumStC_Control)    = m%dll_data%PrevStCCmdStiff(1:3,1:p%NumStC_Control) + &
-                         factor * ( m%dll_data%StCCmdStiff(1:3,1:p%NumStC_Control) - m%dll_data%PrevStCCmdStiff(1:3,1:p%NumStC_Control) )
-         endif
-         if (allocated(StC_CmdDamp)) then
-            StC_CmdDamp(1:3,1:p%NumStC_Control)    = m%dll_data%PrevStCCmdDamp(1:3,1:p%NumStC_Control) + &
-                         factor * ( m%dll_data%StCCmdDamp(1:3,1:p%NumStC_Control) - m%dll_data%PrevStCCmdDamp(1:3,1:p%NumStC_Control) )
-         endif
-         if (allocated(StC_CmdBrake)) then
-            StC_CmdBrake(1:3,1:p%NumStC_Control)    = m%dll_data%PrevStCCmdBrake(1:3,1:p%NumStC_Control) + &
-                         factor * ( m%dll_data%StCCmdBrake(1:3,1:p%NumStC_Control) - m%dll_data%PrevStCCmdBrake(1:3,1:p%NumStC_Control) )
-         endif
-         if (allocated(StC_CmdForce)) then
-            StC_CmdForce(1:3,1:p%NumStC_Control)    = m%dll_data%PrevStCCmdForce(1:3,1:p%NumStC_Control) + &
-                         factor * ( m%dll_data%StCCmdForce(1:3,1:p%NumStC_Control) - m%dll_data%PrevStCCmdForce(1:3,1:p%NumStC_Control) )
-         endif
-         if (allocated(StC_CmdMoment)) then
-            StC_CmdMoment(1:3,1:p%NumStC_Control)    = m%dll_data%PrevStCCmdMoment(1:3,1:p%NumStC_Control) + &
-                         factor * ( m%dll_data%StCCmdMoment(1:3,1:p%NumStC_Control) - m%dll_data%PrevStCCmdMoment(1:3,1:p%NumStC_Control) )
-         endif
+         ! StC control from Simulink (EXTERN)
+      if (p%StCCMode == ControlMode_EXTERN) then
+         if (allocated(StC_CmdStiff))  StC_CmdStiff(1:3,1:p%NumStC_Control)  = u%ExternalStCCmdStiff(1:3,1:p%NumStC_Control)
+         if (allocated(StC_CmdDamp))   StC_CmdDamp( 1:3,1:p%NumStC_Control)  = u%ExternalStCCmdDamp( 1:3,1:p%NumStC_Control)
+         if (allocated(StC_CmdBrake))  StC_CmdBrake(1:3,1:p%NumStC_Control)  = u%ExternalStCCmdBrake(1:3,1:p%NumStC_Control)
+         if (allocated(StC_CmdForce))  StC_CmdForce(1:3,1:p%NumStC_Control)  = u%ExternalStCCmdForce(1:3,1:p%NumStC_Control)
+         if (allocated(StC_CmdMoment)) StC_CmdMoment(1:3,1:p%NumStC_Control) = u%ExternalStCCmdMoment(1:3,1:p%NumStC_Control)
       else
-         if (allocated(StC_CmdStiff))  StC_CmdStiff(1:3,1:p%NumStC_Control) = m%dll_data%StCCmdStiff(1:3,1:p%NumStC_Control)
-         if (allocated(StC_CmdDamp))   StC_CmdDamp( 1:3,1:p%NumStC_Control) = m%dll_data%StCCmdDamp( 1:3,1:p%NumStC_Control)
-         if (allocated(StC_CmdBrake))  StC_CmdBrake(1:3,1:p%NumStC_Control) = m%dll_data%StCCmdBrake(1:3,1:p%NumStC_Control)
-         if (allocated(StC_CmdForce))  StC_CmdForce(1:3,1:p%NumStC_Control) = m%dll_data%StCCmdForce(1:3,1:p%NumStC_Control)
-         if (allocated(StC_CmdMoment)) StC_CmdMoment(1:3,1:p%NumStC_Control)= m%dll_data%StCCmdMoment(1:3,1:p%NumStC_Control)
+         ! User-defined cable control from Bladed-style DLL
+         if (p%DLL_Ramp) then
+            factor = (t - m%LastTimeCalled) / m%dll_data%DLL_DT
+            if (allocated(StC_CmdStiff)) then
+               StC_CmdStiff(1:3,1:p%NumStC_Control)    = m%dll_data%PrevStCCmdStiff(1:3,1:p%NumStC_Control) + &
+                            factor * ( m%dll_data%StCCmdStiff(1:3,1:p%NumStC_Control) - m%dll_data%PrevStCCmdStiff(1:3,1:p%NumStC_Control) )
+            endif
+            if (allocated(StC_CmdDamp)) then
+               StC_CmdDamp(1:3,1:p%NumStC_Control)    = m%dll_data%PrevStCCmdDamp(1:3,1:p%NumStC_Control) + &
+                            factor * ( m%dll_data%StCCmdDamp(1:3,1:p%NumStC_Control) - m%dll_data%PrevStCCmdDamp(1:3,1:p%NumStC_Control) )
+            endif
+            if (allocated(StC_CmdBrake)) then
+               StC_CmdBrake(1:3,1:p%NumStC_Control)    = m%dll_data%PrevStCCmdBrake(1:3,1:p%NumStC_Control) + &
+                            factor * ( m%dll_data%StCCmdBrake(1:3,1:p%NumStC_Control) - m%dll_data%PrevStCCmdBrake(1:3,1:p%NumStC_Control) )
+            endif
+            if (allocated(StC_CmdForce)) then
+               StC_CmdForce(1:3,1:p%NumStC_Control)    = m%dll_data%PrevStCCmdForce(1:3,1:p%NumStC_Control) + &
+                            factor * ( m%dll_data%StCCmdForce(1:3,1:p%NumStC_Control) - m%dll_data%PrevStCCmdForce(1:3,1:p%NumStC_Control) )
+            endif
+            if (allocated(StC_CmdMoment)) then
+               StC_CmdMoment(1:3,1:p%NumStC_Control)    = m%dll_data%PrevStCCmdMoment(1:3,1:p%NumStC_Control) + &
+                            factor * ( m%dll_data%StCCmdMoment(1:3,1:p%NumStC_Control) - m%dll_data%PrevStCCmdMoment(1:3,1:p%NumStC_Control) )
+            endif
+         else
+            if (allocated(StC_CmdStiff))  StC_CmdStiff(1:3,1:p%NumStC_Control) = m%dll_data%StCCmdStiff(1:3,1:p%NumStC_Control)
+            if (allocated(StC_CmdDamp))   StC_CmdDamp( 1:3,1:p%NumStC_Control) = m%dll_data%StCCmdDamp( 1:3,1:p%NumStC_Control)
+            if (allocated(StC_CmdBrake))  StC_CmdBrake(1:3,1:p%NumStC_Control) = m%dll_data%StCCmdBrake(1:3,1:p%NumStC_Control)
+            if (allocated(StC_CmdForce))  StC_CmdForce(1:3,1:p%NumStC_Control) = m%dll_data%StCCmdForce(1:3,1:p%NumStC_Control)
+            if (allocated(StC_CmdMoment)) StC_CmdMoment(1:3,1:p%NumStC_Control)= m%dll_data%StCCmdMoment(1:3,1:p%NumStC_Control)
+         end if
       end if
 END SUBROUTINE StCControl_CalcOutput
 

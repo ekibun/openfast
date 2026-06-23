@@ -472,6 +472,11 @@ IMPLICIT NONE
     REAL(ReKi) , DIMENSION(:), ALLOCATABLE  :: ExternalBlAirfoilCom      !< Commanded Airfoil UserProp for blade.  Passed to AD15 for airfoil interpolation (must be same units as given in AD15 airfoil tables) [-]
     REAL(ReKi) , DIMENSION(:), ALLOCATABLE  :: ExternalCableDeltaL      !< Commanded Cable controlo DeltaL [m]
     REAL(ReKi) , DIMENSION(:), ALLOCATABLE  :: ExternalCableDeltaLdot      !< Commanded Cable controlo DeltaLdot [m/s]
+    REAL(ReKi) , DIMENSION(:,:), ALLOCATABLE  :: ExternalStCCmdStiff      !< Commanded StC stiffness from Simulink(3,NumStC_Control) [N/m]
+    REAL(ReKi) , DIMENSION(:,:), ALLOCATABLE  :: ExternalStCCmdDamp      !< Commanded StC damping from Simulink(3,NumStC_Control) [N/(m/s)]
+    REAL(ReKi) , DIMENSION(:,:), ALLOCATABLE  :: ExternalStCCmdBrake      !< Commanded StC brake from Simulink(3,NumStC_Control) [N]
+    REAL(ReKi) , DIMENSION(:,:), ALLOCATABLE  :: ExternalStCCmdForce      !< Commanded StC force from Simulink(3,NumStC_Control) [N]
+    REAL(ReKi) , DIMENSION(:,:), ALLOCATABLE  :: ExternalStCCmdMoment      !< Commanded StC moment from Simulink(3,NumStC_Control) [N-m]
     REAL(ReKi)  :: TwrAccel = 0.0_ReKi      !< Tower acceleration for tower feedback control (user routine only) [m/s^2]
     REAL(ReKi)  :: YawErr = 0.0_ReKi      !< Yaw error [radians]
     REAL(ReKi)  :: WindDir = 0.0_ReKi      !< Wind direction [radians]
@@ -579,57 +584,62 @@ IMPLICIT NONE
    integer(IntKi), public, parameter :: SrvD_u_ExternalBlAirfoilCom      =  19 ! SrvD%ExternalBlAirfoilCom
    integer(IntKi), public, parameter :: SrvD_u_ExternalCableDeltaL       =  20 ! SrvD%ExternalCableDeltaL
    integer(IntKi), public, parameter :: SrvD_u_ExternalCableDeltaLdot    =  21 ! SrvD%ExternalCableDeltaLdot
-   integer(IntKi), public, parameter :: SrvD_u_TwrAccel                  =  22 ! SrvD%TwrAccel
-   integer(IntKi), public, parameter :: SrvD_u_YawErr                    =  23 ! SrvD%YawErr
-   integer(IntKi), public, parameter :: SrvD_u_WindDir                   =  24 ! SrvD%WindDir
-   integer(IntKi), public, parameter :: SrvD_u_RootMyc                   =  25 ! SrvD%RootMyc
-   integer(IntKi), public, parameter :: SrvD_u_YawBrTAxp                 =  26 ! SrvD%YawBrTAxp
-   integer(IntKi), public, parameter :: SrvD_u_YawBrTAyp                 =  27 ! SrvD%YawBrTAyp
-   integer(IntKi), public, parameter :: SrvD_u_LSSTipPxa                 =  28 ! SrvD%LSSTipPxa
-   integer(IntKi), public, parameter :: SrvD_u_RootMxc                   =  29 ! SrvD%RootMxc
-   integer(IntKi), public, parameter :: SrvD_u_LSSTipMxa                 =  30 ! SrvD%LSSTipMxa
-   integer(IntKi), public, parameter :: SrvD_u_LSSTipMya                 =  31 ! SrvD%LSSTipMya
-   integer(IntKi), public, parameter :: SrvD_u_LSSTipMza                 =  32 ! SrvD%LSSTipMza
-   integer(IntKi), public, parameter :: SrvD_u_LSSTipMys                 =  33 ! SrvD%LSSTipMys
-   integer(IntKi), public, parameter :: SrvD_u_LSSTipMzs                 =  34 ! SrvD%LSSTipMzs
-   integer(IntKi), public, parameter :: SrvD_u_YawBrMyn                  =  35 ! SrvD%YawBrMyn
-   integer(IntKi), public, parameter :: SrvD_u_YawBrMzn                  =  36 ! SrvD%YawBrMzn
-   integer(IntKi), public, parameter :: SrvD_u_NcIMURAxs                 =  37 ! SrvD%NcIMURAxs
-   integer(IntKi), public, parameter :: SrvD_u_NcIMURAys                 =  38 ! SrvD%NcIMURAys
-   integer(IntKi), public, parameter :: SrvD_u_NcIMURAzs                 =  39 ! SrvD%NcIMURAzs
-   integer(IntKi), public, parameter :: SrvD_u_RotPwr                    =  40 ! SrvD%RotPwr
-   integer(IntKi), public, parameter :: SrvD_u_HorWindV                  =  41 ! SrvD%HorWindV
-   integer(IntKi), public, parameter :: SrvD_u_YawAngle                  =  42 ! SrvD%YawAngle
-   integer(IntKi), public, parameter :: SrvD_u_LSShftFxa                 =  43 ! SrvD%LSShftFxa
-   integer(IntKi), public, parameter :: SrvD_u_LSShftFys                 =  44 ! SrvD%LSShftFys
-   integer(IntKi), public, parameter :: SrvD_u_LSShftFzs                 =  45 ! SrvD%LSShftFzs
-   integer(IntKi), public, parameter :: SrvD_u_PtfmMotionMesh            =  46 ! SrvD%PtfmMotionMesh
-   integer(IntKi), public, parameter :: SrvD_u_BStCMotionMesh            =  47 ! SrvD%BStCMotionMesh(DL%i1, DL%i2)
-   integer(IntKi), public, parameter :: SrvD_u_NStCMotionMesh            =  48 ! SrvD%NStCMotionMesh(DL%i1)
-   integer(IntKi), public, parameter :: SrvD_u_TStCMotionMesh            =  49 ! SrvD%TStCMotionMesh(DL%i1)
-   integer(IntKi), public, parameter :: SrvD_u_SStCMotionMesh            =  50 ! SrvD%SStCMotionMesh(DL%i1)
-   integer(IntKi), public, parameter :: SrvD_u_LidSpeed                  =  51 ! SrvD%LidSpeed
-   integer(IntKi), public, parameter :: SrvD_u_MsrPositionsX             =  52 ! SrvD%MsrPositionsX
-   integer(IntKi), public, parameter :: SrvD_u_MsrPositionsY             =  53 ! SrvD%MsrPositionsY
-   integer(IntKi), public, parameter :: SrvD_u_MsrPositionsZ             =  54 ! SrvD%MsrPositionsZ
-   integer(IntKi), public, parameter :: SrvD_y_WriteOutput               =  55 ! SrvD%WriteOutput
-   integer(IntKi), public, parameter :: SrvD_y_BlPitchMom                =  56 ! SrvD%BlPitchMom
-   integer(IntKi), public, parameter :: SrvD_y_BlPitchCom                =  57 ! SrvD%BlPitchCom
-   integer(IntKi), public, parameter :: SrvD_y_BlPRateCom                =  58 ! SrvD%BlPRateCom
-   integer(IntKi), public, parameter :: SrvD_y_BlAirfoilCom              =  59 ! SrvD%BlAirfoilCom
-   integer(IntKi), public, parameter :: SrvD_y_YawMom                    =  60 ! SrvD%YawMom
-   integer(IntKi), public, parameter :: SrvD_y_YawPosCom                 =  61 ! SrvD%YawPosCom
-   integer(IntKi), public, parameter :: SrvD_y_YawRateCom                =  62 ! SrvD%YawRateCom
-   integer(IntKi), public, parameter :: SrvD_y_GenTrq                    =  63 ! SrvD%GenTrq
-   integer(IntKi), public, parameter :: SrvD_y_HSSBrTrqC                 =  64 ! SrvD%HSSBrTrqC
-   integer(IntKi), public, parameter :: SrvD_y_ElecPwr                   =  65 ! SrvD%ElecPwr
-   integer(IntKi), public, parameter :: SrvD_y_TBDrCon                   =  66 ! SrvD%TBDrCon
-   integer(IntKi), public, parameter :: SrvD_y_CableDeltaL               =  67 ! SrvD%CableDeltaL
-   integer(IntKi), public, parameter :: SrvD_y_CableDeltaLdot            =  68 ! SrvD%CableDeltaLdot
-   integer(IntKi), public, parameter :: SrvD_y_BStCLoadMesh              =  69 ! SrvD%BStCLoadMesh(DL%i1, DL%i2)
-   integer(IntKi), public, parameter :: SrvD_y_NStCLoadMesh              =  70 ! SrvD%NStCLoadMesh(DL%i1)
-   integer(IntKi), public, parameter :: SrvD_y_TStCLoadMesh              =  71 ! SrvD%TStCLoadMesh(DL%i1)
-   integer(IntKi), public, parameter :: SrvD_y_SStCLoadMesh              =  72 ! SrvD%SStCLoadMesh(DL%i1)
+   integer(IntKi), public, parameter :: SrvD_u_ExternalStCCmdStiff       =  22 ! SrvD%ExternalStCCmdStiff
+   integer(IntKi), public, parameter :: SrvD_u_ExternalStCCmdDamp        =  23 ! SrvD%ExternalStCCmdDamp
+   integer(IntKi), public, parameter :: SrvD_u_ExternalStCCmdBrake       =  24 ! SrvD%ExternalStCCmdBrake
+   integer(IntKi), public, parameter :: SrvD_u_ExternalStCCmdForce       =  25 ! SrvD%ExternalStCCmdForce
+   integer(IntKi), public, parameter :: SrvD_u_ExternalStCCmdMoment      =  26 ! SrvD%ExternalStCCmdMoment
+   integer(IntKi), public, parameter :: SrvD_u_TwrAccel                  =  27 ! SrvD%TwrAccel
+   integer(IntKi), public, parameter :: SrvD_u_YawErr                    =  28 ! SrvD%YawErr
+   integer(IntKi), public, parameter :: SrvD_u_WindDir                   =  29 ! SrvD%WindDir
+   integer(IntKi), public, parameter :: SrvD_u_RootMyc                   =  30 ! SrvD%RootMyc
+   integer(IntKi), public, parameter :: SrvD_u_YawBrTAxp                 =  31 ! SrvD%YawBrTAxp
+   integer(IntKi), public, parameter :: SrvD_u_YawBrTAyp                 =  32 ! SrvD%YawBrTAyp
+   integer(IntKi), public, parameter :: SrvD_u_LSSTipPxa                 =  33 ! SrvD%LSSTipPxa
+   integer(IntKi), public, parameter :: SrvD_u_RootMxc                   =  34 ! SrvD%RootMxc
+   integer(IntKi), public, parameter :: SrvD_u_LSSTipMxa                 =  35 ! SrvD%LSSTipMxa
+   integer(IntKi), public, parameter :: SrvD_u_LSSTipMya                 =  36 ! SrvD%LSSTipMya
+   integer(IntKi), public, parameter :: SrvD_u_LSSTipMza                 =  37 ! SrvD%LSSTipMza
+   integer(IntKi), public, parameter :: SrvD_u_LSSTipMys                 =  38 ! SrvD%LSSTipMys
+   integer(IntKi), public, parameter :: SrvD_u_LSSTipMzs                 =  39 ! SrvD%LSSTipMzs
+   integer(IntKi), public, parameter :: SrvD_u_YawBrMyn                  =  40 ! SrvD%YawBrMyn
+   integer(IntKi), public, parameter :: SrvD_u_YawBrMzn                  =  41 ! SrvD%YawBrMzn
+   integer(IntKi), public, parameter :: SrvD_u_NcIMURAxs                 =  42 ! SrvD%NcIMURAxs
+   integer(IntKi), public, parameter :: SrvD_u_NcIMURAys                 =  43 ! SrvD%NcIMURAys
+   integer(IntKi), public, parameter :: SrvD_u_NcIMURAzs                 =  44 ! SrvD%NcIMURAzs
+   integer(IntKi), public, parameter :: SrvD_u_RotPwr                    =  45 ! SrvD%RotPwr
+   integer(IntKi), public, parameter :: SrvD_u_HorWindV                  =  46 ! SrvD%HorWindV
+   integer(IntKi), public, parameter :: SrvD_u_YawAngle                  =  47 ! SrvD%YawAngle
+   integer(IntKi), public, parameter :: SrvD_u_LSShftFxa                 =  48 ! SrvD%LSShftFxa
+   integer(IntKi), public, parameter :: SrvD_u_LSShftFys                 =  49 ! SrvD%LSShftFys
+   integer(IntKi), public, parameter :: SrvD_u_LSShftFzs                 =  50 ! SrvD%LSShftFzs
+   integer(IntKi), public, parameter :: SrvD_u_PtfmMotionMesh            =  51 ! SrvD%PtfmMotionMesh
+   integer(IntKi), public, parameter :: SrvD_u_BStCMotionMesh            =  52 ! SrvD%BStCMotionMesh(DL%i1, DL%i2)
+   integer(IntKi), public, parameter :: SrvD_u_NStCMotionMesh            =  53 ! SrvD%NStCMotionMesh(DL%i1)
+   integer(IntKi), public, parameter :: SrvD_u_TStCMotionMesh            =  54 ! SrvD%TStCMotionMesh(DL%i1)
+   integer(IntKi), public, parameter :: SrvD_u_SStCMotionMesh            =  55 ! SrvD%SStCMotionMesh(DL%i1)
+   integer(IntKi), public, parameter :: SrvD_u_LidSpeed                  =  56 ! SrvD%LidSpeed
+   integer(IntKi), public, parameter :: SrvD_u_MsrPositionsX             =  57 ! SrvD%MsrPositionsX
+   integer(IntKi), public, parameter :: SrvD_u_MsrPositionsY             =  58 ! SrvD%MsrPositionsY
+   integer(IntKi), public, parameter :: SrvD_u_MsrPositionsZ             =  59 ! SrvD%MsrPositionsZ
+   integer(IntKi), public, parameter :: SrvD_y_WriteOutput               =  60 ! SrvD%WriteOutput
+   integer(IntKi), public, parameter :: SrvD_y_BlPitchMom                =  61 ! SrvD%BlPitchMom
+   integer(IntKi), public, parameter :: SrvD_y_BlPitchCom                =  62 ! SrvD%BlPitchCom
+   integer(IntKi), public, parameter :: SrvD_y_BlPRateCom                =  63 ! SrvD%BlPRateCom
+   integer(IntKi), public, parameter :: SrvD_y_BlAirfoilCom              =  64 ! SrvD%BlAirfoilCom
+   integer(IntKi), public, parameter :: SrvD_y_YawMom                    =  65 ! SrvD%YawMom
+   integer(IntKi), public, parameter :: SrvD_y_YawPosCom                 =  66 ! SrvD%YawPosCom
+   integer(IntKi), public, parameter :: SrvD_y_YawRateCom                =  67 ! SrvD%YawRateCom
+   integer(IntKi), public, parameter :: SrvD_y_GenTrq                    =  68 ! SrvD%GenTrq
+   integer(IntKi), public, parameter :: SrvD_y_HSSBrTrqC                 =  69 ! SrvD%HSSBrTrqC
+   integer(IntKi), public, parameter :: SrvD_y_ElecPwr                   =  70 ! SrvD%ElecPwr
+   integer(IntKi), public, parameter :: SrvD_y_TBDrCon                   =  71 ! SrvD%TBDrCon
+   integer(IntKi), public, parameter :: SrvD_y_CableDeltaL               =  72 ! SrvD%CableDeltaL
+   integer(IntKi), public, parameter :: SrvD_y_CableDeltaLdot            =  73 ! SrvD%CableDeltaLdot
+   integer(IntKi), public, parameter :: SrvD_y_BStCLoadMesh              =  74 ! SrvD%BStCLoadMesh(DL%i1, DL%i2)
+   integer(IntKi), public, parameter :: SrvD_y_NStCLoadMesh              =  75 ! SrvD%NStCLoadMesh(DL%i1)
+   integer(IntKi), public, parameter :: SrvD_y_TStCLoadMesh              =  76 ! SrvD%TStCLoadMesh(DL%i1)
+   integer(IntKi), public, parameter :: SrvD_y_SStCLoadMesh              =  77 ! SrvD%SStCLoadMesh(DL%i1)
 
 contains
 
@@ -4569,6 +4579,66 @@ subroutine SrvD_CopyInput(SrcInputData, DstInputData, CtrlCode, ErrStat, ErrMsg)
       end if
       DstInputData%ExternalCableDeltaLdot = SrcInputData%ExternalCableDeltaLdot
    end if
+   if (allocated(SrcInputData%ExternalStCCmdStiff)) then
+      LB(1:2) = lbound(SrcInputData%ExternalStCCmdStiff)
+      UB(1:2) = ubound(SrcInputData%ExternalStCCmdStiff)
+      if (.not. allocated(DstInputData%ExternalStCCmdStiff)) then
+         allocate(DstInputData%ExternalStCCmdStiff(LB(1):UB(1),LB(2):UB(2)), stat=ErrStat2)
+         if (ErrStat2 /= 0) then
+            call SetErrStat(ErrID_Fatal, 'Error allocating DstInputData%ExternalStCCmdStiff.', ErrStat, ErrMsg, RoutineName)
+            return
+         end if
+      end if
+      DstInputData%ExternalStCCmdStiff = SrcInputData%ExternalStCCmdStiff
+   end if
+   if (allocated(SrcInputData%ExternalStCCmdDamp)) then
+      LB(1:2) = lbound(SrcInputData%ExternalStCCmdDamp)
+      UB(1:2) = ubound(SrcInputData%ExternalStCCmdDamp)
+      if (.not. allocated(DstInputData%ExternalStCCmdDamp)) then
+         allocate(DstInputData%ExternalStCCmdDamp(LB(1):UB(1),LB(2):UB(2)), stat=ErrStat2)
+         if (ErrStat2 /= 0) then
+            call SetErrStat(ErrID_Fatal, 'Error allocating DstInputData%ExternalStCCmdDamp.', ErrStat, ErrMsg, RoutineName)
+            return
+         end if
+      end if
+      DstInputData%ExternalStCCmdDamp = SrcInputData%ExternalStCCmdDamp
+   end if
+   if (allocated(SrcInputData%ExternalStCCmdBrake)) then
+      LB(1:2) = lbound(SrcInputData%ExternalStCCmdBrake)
+      UB(1:2) = ubound(SrcInputData%ExternalStCCmdBrake)
+      if (.not. allocated(DstInputData%ExternalStCCmdBrake)) then
+         allocate(DstInputData%ExternalStCCmdBrake(LB(1):UB(1),LB(2):UB(2)), stat=ErrStat2)
+         if (ErrStat2 /= 0) then
+            call SetErrStat(ErrID_Fatal, 'Error allocating DstInputData%ExternalStCCmdBrake.', ErrStat, ErrMsg, RoutineName)
+            return
+         end if
+      end if
+      DstInputData%ExternalStCCmdBrake = SrcInputData%ExternalStCCmdBrake
+   end if
+   if (allocated(SrcInputData%ExternalStCCmdForce)) then
+      LB(1:2) = lbound(SrcInputData%ExternalStCCmdForce)
+      UB(1:2) = ubound(SrcInputData%ExternalStCCmdForce)
+      if (.not. allocated(DstInputData%ExternalStCCmdForce)) then
+         allocate(DstInputData%ExternalStCCmdForce(LB(1):UB(1),LB(2):UB(2)), stat=ErrStat2)
+         if (ErrStat2 /= 0) then
+            call SetErrStat(ErrID_Fatal, 'Error allocating DstInputData%ExternalStCCmdForce.', ErrStat, ErrMsg, RoutineName)
+            return
+         end if
+      end if
+      DstInputData%ExternalStCCmdForce = SrcInputData%ExternalStCCmdForce
+   end if
+   if (allocated(SrcInputData%ExternalStCCmdMoment)) then
+      LB(1:2) = lbound(SrcInputData%ExternalStCCmdMoment)
+      UB(1:2) = ubound(SrcInputData%ExternalStCCmdMoment)
+      if (.not. allocated(DstInputData%ExternalStCCmdMoment)) then
+         allocate(DstInputData%ExternalStCCmdMoment(LB(1):UB(1),LB(2):UB(2)), stat=ErrStat2)
+         if (ErrStat2 /= 0) then
+            call SetErrStat(ErrID_Fatal, 'Error allocating DstInputData%ExternalStCCmdMoment.', ErrStat, ErrMsg, RoutineName)
+            return
+         end if
+      end if
+      DstInputData%ExternalStCCmdMoment = SrcInputData%ExternalStCCmdMoment
+   end if
    DstInputData%TwrAccel = SrcInputData%TwrAccel
    DstInputData%YawErr = SrcInputData%YawErr
    DstInputData%WindDir = SrcInputData%WindDir
@@ -4741,6 +4811,21 @@ subroutine SrvD_DestroyInput(InputData, ErrStat, ErrMsg)
    if (allocated(InputData%ExternalCableDeltaLdot)) then
       deallocate(InputData%ExternalCableDeltaLdot)
    end if
+   if (allocated(InputData%ExternalStCCmdStiff)) then
+      deallocate(InputData%ExternalStCCmdStiff)
+   end if
+   if (allocated(InputData%ExternalStCCmdDamp)) then
+      deallocate(InputData%ExternalStCCmdDamp)
+   end if
+   if (allocated(InputData%ExternalStCCmdBrake)) then
+      deallocate(InputData%ExternalStCCmdBrake)
+   end if
+   if (allocated(InputData%ExternalStCCmdForce)) then
+      deallocate(InputData%ExternalStCCmdForce)
+   end if
+   if (allocated(InputData%ExternalStCCmdMoment)) then
+      deallocate(InputData%ExternalStCCmdMoment)
+   end if
    call MeshDestroy( InputData%PtfmMotionMesh, ErrStat2, ErrMsg2)
    call SetErrStat(ErrStat2, ErrMsg2, ErrStat, ErrMsg, RoutineName)
    if (allocated(InputData%BStCMotionMesh)) then
@@ -4818,6 +4903,11 @@ subroutine SrvD_PackInput(RF, Indata)
    call RegPackAlloc(RF, InData%ExternalBlAirfoilCom)
    call RegPackAlloc(RF, InData%ExternalCableDeltaL)
    call RegPackAlloc(RF, InData%ExternalCableDeltaLdot)
+   call RegPackAlloc(RF, InData%ExternalStCCmdStiff)
+   call RegPackAlloc(RF, InData%ExternalStCCmdDamp)
+   call RegPackAlloc(RF, InData%ExternalStCCmdBrake)
+   call RegPackAlloc(RF, InData%ExternalStCCmdForce)
+   call RegPackAlloc(RF, InData%ExternalStCCmdMoment)
    call RegPack(RF, InData%TwrAccel)
    call RegPack(RF, InData%YawErr)
    call RegPack(RF, InData%WindDir)
@@ -4913,6 +5003,11 @@ subroutine SrvD_UnPackInput(RF, OutData)
    call RegUnpackAlloc(RF, OutData%ExternalBlAirfoilCom); if (RegCheckErr(RF, RoutineName)) return
    call RegUnpackAlloc(RF, OutData%ExternalCableDeltaL); if (RegCheckErr(RF, RoutineName)) return
    call RegUnpackAlloc(RF, OutData%ExternalCableDeltaLdot); if (RegCheckErr(RF, RoutineName)) return
+   call RegUnpackAlloc(RF, OutData%ExternalStCCmdStiff); if (RegCheckErr(RF, RoutineName)) return
+   call RegUnpackAlloc(RF, OutData%ExternalStCCmdDamp); if (RegCheckErr(RF, RoutineName)) return
+   call RegUnpackAlloc(RF, OutData%ExternalStCCmdBrake); if (RegCheckErr(RF, RoutineName)) return
+   call RegUnpackAlloc(RF, OutData%ExternalStCCmdForce); if (RegCheckErr(RF, RoutineName)) return
+   call RegUnpackAlloc(RF, OutData%ExternalStCCmdMoment); if (RegCheckErr(RF, RoutineName)) return
    call RegUnpack(RF, OutData%TwrAccel); if (RegCheckErr(RF, RoutineName)) return
    call RegUnpack(RF, OutData%YawErr); if (RegCheckErr(RF, RoutineName)) return
    call RegUnpack(RF, OutData%WindDir); if (RegCheckErr(RF, RoutineName)) return
@@ -6268,6 +6363,21 @@ SUBROUTINE SrvD_Input_ExtrapInterp1(u1, u2, tin, u_out, tin_out, ErrStat, ErrMsg
    IF (ALLOCATED(u_out%ExternalCableDeltaLdot) .AND. ALLOCATED(u1%ExternalCableDeltaLdot)) THEN
       u_out%ExternalCableDeltaLdot = a1*u1%ExternalCableDeltaLdot + a2*u2%ExternalCableDeltaLdot
    END IF ! check if allocated
+   IF (ALLOCATED(u_out%ExternalStCCmdStiff) .AND. ALLOCATED(u1%ExternalStCCmdStiff)) THEN
+      u_out%ExternalStCCmdStiff = a1*u1%ExternalStCCmdStiff + a2*u2%ExternalStCCmdStiff
+   END IF ! check if allocated
+   IF (ALLOCATED(u_out%ExternalStCCmdDamp) .AND. ALLOCATED(u1%ExternalStCCmdDamp)) THEN
+      u_out%ExternalStCCmdDamp = a1*u1%ExternalStCCmdDamp + a2*u2%ExternalStCCmdDamp
+   END IF ! check if allocated
+   IF (ALLOCATED(u_out%ExternalStCCmdBrake) .AND. ALLOCATED(u1%ExternalStCCmdBrake)) THEN
+      u_out%ExternalStCCmdBrake = a1*u1%ExternalStCCmdBrake + a2*u2%ExternalStCCmdBrake
+   END IF ! check if allocated
+   IF (ALLOCATED(u_out%ExternalStCCmdForce) .AND. ALLOCATED(u1%ExternalStCCmdForce)) THEN
+      u_out%ExternalStCCmdForce = a1*u1%ExternalStCCmdForce + a2*u2%ExternalStCCmdForce
+   END IF ! check if allocated
+   IF (ALLOCATED(u_out%ExternalStCCmdMoment) .AND. ALLOCATED(u1%ExternalStCCmdMoment)) THEN
+      u_out%ExternalStCCmdMoment = a1*u1%ExternalStCCmdMoment + a2*u2%ExternalStCCmdMoment
+   END IF ! check if allocated
    u_out%TwrAccel = a1*u1%TwrAccel + a2*u2%TwrAccel
    CALL Angles_ExtrapInterp( u1%YawErr, u2%YawErr, tin, u_out%YawErr, tin_out )
    CALL Angles_ExtrapInterp( u1%WindDir, u2%WindDir, tin, u_out%WindDir, tin_out )
@@ -6422,6 +6532,21 @@ SUBROUTINE SrvD_Input_ExtrapInterp2(u1, u2, u3, tin, u_out, tin_out, ErrStat, Er
    END IF ! check if allocated
    IF (ALLOCATED(u_out%ExternalCableDeltaLdot) .AND. ALLOCATED(u1%ExternalCableDeltaLdot)) THEN
       u_out%ExternalCableDeltaLdot = a1*u1%ExternalCableDeltaLdot + a2*u2%ExternalCableDeltaLdot + a3*u3%ExternalCableDeltaLdot
+   END IF ! check if allocated
+   IF (ALLOCATED(u_out%ExternalStCCmdStiff) .AND. ALLOCATED(u1%ExternalStCCmdStiff)) THEN
+      u_out%ExternalStCCmdStiff = a1*u1%ExternalStCCmdStiff + a2*u2%ExternalStCCmdStiff + a3*u3%ExternalStCCmdStiff
+   END IF ! check if allocated
+   IF (ALLOCATED(u_out%ExternalStCCmdDamp) .AND. ALLOCATED(u1%ExternalStCCmdDamp)) THEN
+      u_out%ExternalStCCmdDamp = a1*u1%ExternalStCCmdDamp + a2*u2%ExternalStCCmdDamp + a3*u3%ExternalStCCmdDamp
+   END IF ! check if allocated
+   IF (ALLOCATED(u_out%ExternalStCCmdBrake) .AND. ALLOCATED(u1%ExternalStCCmdBrake)) THEN
+      u_out%ExternalStCCmdBrake = a1*u1%ExternalStCCmdBrake + a2*u2%ExternalStCCmdBrake + a3*u3%ExternalStCCmdBrake
+   END IF ! check if allocated
+   IF (ALLOCATED(u_out%ExternalStCCmdForce) .AND. ALLOCATED(u1%ExternalStCCmdForce)) THEN
+      u_out%ExternalStCCmdForce = a1*u1%ExternalStCCmdForce + a2*u2%ExternalStCCmdForce + a3*u3%ExternalStCCmdForce
+   END IF ! check if allocated
+   IF (ALLOCATED(u_out%ExternalStCCmdMoment) .AND. ALLOCATED(u1%ExternalStCCmdMoment)) THEN
+      u_out%ExternalStCCmdMoment = a1*u1%ExternalStCCmdMoment + a2*u2%ExternalStCCmdMoment + a3*u3%ExternalStCCmdMoment
    END IF ! check if allocated
    u_out%TwrAccel = a1*u1%TwrAccel + a2*u2%TwrAccel + a3*u3%TwrAccel
    CALL Angles_ExtrapInterp( u1%YawErr, u2%YawErr, u3%YawErr, tin, u_out%YawErr, tin_out )
@@ -6962,6 +7087,16 @@ subroutine SrvD_VarPackInput(V, u, ValAry)
          VarVals = u%ExternalCableDeltaL(V%iLB:V%iUB)                         ! Rank 1 Array
       case (SrvD_u_ExternalCableDeltaLdot)
          VarVals = u%ExternalCableDeltaLdot(V%iLB:V%iUB)                      ! Rank 1 Array
+      case (SrvD_u_ExternalStCCmdStiff)
+         VarVals = u%ExternalStCCmdStiff(V%iLB:V%iUB,V%j)                     ! Rank 2 Array
+      case (SrvD_u_ExternalStCCmdDamp)
+         VarVals = u%ExternalStCCmdDamp(V%iLB:V%iUB,V%j)                      ! Rank 2 Array
+      case (SrvD_u_ExternalStCCmdBrake)
+         VarVals = u%ExternalStCCmdBrake(V%iLB:V%iUB,V%j)                     ! Rank 2 Array
+      case (SrvD_u_ExternalStCCmdForce)
+         VarVals = u%ExternalStCCmdForce(V%iLB:V%iUB,V%j)                     ! Rank 2 Array
+      case (SrvD_u_ExternalStCCmdMoment)
+         VarVals = u%ExternalStCCmdMoment(V%iLB:V%iUB,V%j)                    ! Rank 2 Array
       case (SrvD_u_TwrAccel)
          VarVals(1) = u%TwrAccel                                              ! Scalar
       case (SrvD_u_YawErr)
@@ -7082,6 +7217,16 @@ subroutine SrvD_VarUnpackInput(V, ValAry, u)
          u%ExternalCableDeltaL(V%iLB:V%iUB) = VarVals                         ! Rank 1 Array
       case (SrvD_u_ExternalCableDeltaLdot)
          u%ExternalCableDeltaLdot(V%iLB:V%iUB) = VarVals                      ! Rank 1 Array
+      case (SrvD_u_ExternalStCCmdStiff)
+         u%ExternalStCCmdStiff(V%iLB:V%iUB, V%j) = VarVals                    ! Rank 2 Array
+      case (SrvD_u_ExternalStCCmdDamp)
+         u%ExternalStCCmdDamp(V%iLB:V%iUB, V%j) = VarVals                     ! Rank 2 Array
+      case (SrvD_u_ExternalStCCmdBrake)
+         u%ExternalStCCmdBrake(V%iLB:V%iUB, V%j) = VarVals                    ! Rank 2 Array
+      case (SrvD_u_ExternalStCCmdForce)
+         u%ExternalStCCmdForce(V%iLB:V%iUB, V%j) = VarVals                    ! Rank 2 Array
+      case (SrvD_u_ExternalStCCmdMoment)
+         u%ExternalStCCmdMoment(V%iLB:V%iUB, V%j) = VarVals                   ! Rank 2 Array
       case (SrvD_u_TwrAccel)
          u%TwrAccel = VarVals(1)                                              ! Scalar
       case (SrvD_u_YawErr)
@@ -7188,6 +7333,16 @@ function SrvD_InputFieldName(DL) result(Name)
        Name = "u%ExternalCableDeltaL"
    case (SrvD_u_ExternalCableDeltaLdot)
        Name = "u%ExternalCableDeltaLdot"
+   case (SrvD_u_ExternalStCCmdStiff)
+       Name = "u%ExternalStCCmdStiff"
+   case (SrvD_u_ExternalStCCmdDamp)
+       Name = "u%ExternalStCCmdDamp"
+   case (SrvD_u_ExternalStCCmdBrake)
+       Name = "u%ExternalStCCmdBrake"
+   case (SrvD_u_ExternalStCCmdForce)
+       Name = "u%ExternalStCCmdForce"
+   case (SrvD_u_ExternalStCCmdMoment)
+       Name = "u%ExternalStCCmdMoment"
    case (SrvD_u_TwrAccel)
        Name = "u%TwrAccel"
    case (SrvD_u_YawErr)

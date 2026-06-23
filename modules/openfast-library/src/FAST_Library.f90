@@ -37,8 +37,8 @@ MODULE FAST_Data
    REAL(DbKi),     PARAMETER             :: t_initial = 0.0_DbKi     ! Initial time
    INTEGER,        PARAMETER             :: IntfStrLen  = 1025       ! length of strings through the C interface
    INTEGER(IntKi), PARAMETER             :: MAXOUTPUTS = 4000        ! Maximum number of outputs
-   INTEGER(IntKi), PARAMETER             :: MAXInitINPUTS = 53       ! Maximum number of initialization values from Simulink
-   INTEGER(IntKi), PARAMETER             :: NumFixedInputs = 51
+   INTEGER(IntKi), PARAMETER             :: MAXInitINPUTS = 203       ! Maximum number of initialization values from Simulink
+   INTEGER(IntKi), PARAMETER             :: NumFixedInputs = 201
    integer(IntKi), parameter, private    :: iED = 1
    
       ! Global (static) data:
@@ -415,6 +415,11 @@ subroutine FAST_SetExternalInputs(iTurb, NumInputs_c, InputAry, m_FAST)
       m_FAST%ExternInput%BlAirfoilCom     = InputAry(9:11)
       m_FAST%ExternInput%CableDeltaL      = InputAry(12:31)
       m_FAST%ExternInput%CableDeltaLdot   = InputAry(32:51)
+      m_FAST%ExternInput%StCCmdStiff      = InputAry(52:81)
+      m_FAST%ExternInput%StCCmdDamp       = InputAry(82:111)
+      m_FAST%ExternInput%StCCmdBrake      = InputAry(112:141)
+      m_FAST%ExternInput%StCCmdForce      = InputAry(142:171)
+      m_FAST%ExternInput%StCCmdMoment     = InputAry(172:201)
 
 
 end subroutine FAST_SetExternalInputs

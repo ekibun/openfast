@@ -519,6 +519,11 @@ typedef	^	FAST_ExternInputType	ReKi	BlAirfoilCom	3	-	-	"blade airfoil commands f
 typedef	^	FAST_ExternInputType	ReKi	HSSBrFrac	-	-	-	"Fraction of full braking torque: 0 (off) <= HSSBrFrac <= 1 (full) from Simulink or LabVIEW"
 typedef	^	FAST_ExternInputType	ReKi	CableDeltaL	{20}	-	-	"Cable control DeltaL"	m
 typedef	^	FAST_ExternInputType	ReKi	CableDeltaLdot	{20}	-	-	"Cable control DeltaLdot"	m/s
+typedef	^	FAST_ExternInputType	ReKi	StCCmdStiff	{30}	-	-	"StC control stiffness from Simulink/Labview"	N/m
+typedef	^	FAST_ExternInputType	ReKi	StCCmdDamp	{30}	-	-	"StC control damping from Simulink/Labview"	N/(m/s)
+typedef	^	FAST_ExternInputType	ReKi	StCCmdBrake	{30}	-	-	"StC control brake from Simulink/Labview"	N
+typedef	^	FAST_ExternInputType	ReKi	StCCmdForce	{30}	-	-	"StC control force from Simulink/Labview"	N
+typedef	^	FAST_ExternInputType	ReKi	StCCmdMoment	{30}	-	-	"StC control moment from Simulink/Labview"	N-m
 
 # ..... FAST_MiscVarType data .......................................................................................................
 typedef	FAST	FAST_MiscVarType	DbKi	TiLstPrn	-	-	-	"The simulation time of the last print (to file)"	(s)

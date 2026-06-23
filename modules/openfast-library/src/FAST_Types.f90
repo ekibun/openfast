@@ -559,6 +559,11 @@ IMPLICIT NONE
     REAL(ReKi)  :: HSSBrFrac = 0.0_ReKi      !< Fraction of full braking torque: 0 (off) <= HSSBrFrac <= 1 (full) from Simulink or LabVIEW [-]
     REAL(ReKi) , DIMENSION(1:20)  :: CableDeltaL = 0.0_ReKi      !< Cable control DeltaL [m]
     REAL(ReKi) , DIMENSION(1:20)  :: CableDeltaLdot = 0.0_ReKi      !< Cable control DeltaLdot [m/s]
+    REAL(ReKi) , DIMENSION(1:30)  :: StCCmdStiff = 0.0_ReKi      !< StC control stiffness from Simulink/Labview [N/m]
+    REAL(ReKi) , DIMENSION(1:30)  :: StCCmdDamp = 0.0_ReKi      !< StC control damping from Simulink/Labview [N/(m/s)]
+    REAL(ReKi) , DIMENSION(1:30)  :: StCCmdBrake = 0.0_ReKi      !< StC control brake from Simulink/Labview [N]
+    REAL(ReKi) , DIMENSION(1:30)  :: StCCmdForce = 0.0_ReKi      !< StC control force from Simulink/Labview [N]
+    REAL(ReKi) , DIMENSION(1:30)  :: StCCmdMoment = 0.0_ReKi      !< StC control moment from Simulink/Labview [N-m]
   END TYPE FAST_ExternInputType
 ! =======================
 ! =========  FAST_MiscVarType  =======
@@ -8704,6 +8709,11 @@ subroutine FAST_CopyExternInputType(SrcExternInputTypeData, DstExternInputTypeDa
    DstExternInputTypeData%HSSBrFrac = SrcExternInputTypeData%HSSBrFrac
    DstExternInputTypeData%CableDeltaL = SrcExternInputTypeData%CableDeltaL
    DstExternInputTypeData%CableDeltaLdot = SrcExternInputTypeData%CableDeltaLdot
+   DstExternInputTypeData%StCCmdStiff = SrcExternInputTypeData%StCCmdStiff
+   DstExternInputTypeData%StCCmdDamp = SrcExternInputTypeData%StCCmdDamp
+   DstExternInputTypeData%StCCmdBrake = SrcExternInputTypeData%StCCmdBrake
+   DstExternInputTypeData%StCCmdForce = SrcExternInputTypeData%StCCmdForce
+   DstExternInputTypeData%StCCmdMoment = SrcExternInputTypeData%StCCmdMoment
 end subroutine
 
 subroutine FAST_DestroyExternInputType(ExternInputTypeData, ErrStat, ErrMsg)
@@ -8729,6 +8739,11 @@ subroutine FAST_PackExternInputType(RF, Indata)
    call RegPack(RF, InData%HSSBrFrac)
    call RegPack(RF, InData%CableDeltaL)
    call RegPack(RF, InData%CableDeltaLdot)
+   call RegPack(RF, InData%StCCmdStiff)
+   call RegPack(RF, InData%StCCmdDamp)
+   call RegPack(RF, InData%StCCmdBrake)
+   call RegPack(RF, InData%StCCmdForce)
+   call RegPack(RF, InData%StCCmdMoment)
    if (RegCheckErr(RF, RoutineName)) return
 end subroutine
 
@@ -8746,6 +8761,11 @@ subroutine FAST_UnPackExternInputType(RF, OutData)
    call RegUnpack(RF, OutData%HSSBrFrac); if (RegCheckErr(RF, RoutineName)) return
    call RegUnpack(RF, OutData%CableDeltaL); if (RegCheckErr(RF, RoutineName)) return
    call RegUnpack(RF, OutData%CableDeltaLdot); if (RegCheckErr(RF, RoutineName)) return
+   call RegUnpack(RF, OutData%StCCmdStiff); if (RegCheckErr(RF, RoutineName)) return
+   call RegUnpack(RF, OutData%StCCmdDamp); if (RegCheckErr(RF, RoutineName)) return
+   call RegUnpack(RF, OutData%StCCmdBrake); if (RegCheckErr(RF, RoutineName)) return
+   call RegUnpack(RF, OutData%StCCmdForce); if (RegCheckErr(RF, RoutineName)) return
+   call RegUnpack(RF, OutData%StCCmdMoment); if (RegCheckErr(RF, RoutineName)) return
 end subroutine
 
 subroutine FAST_CopyMisc(SrcMiscData, DstMiscData, CtrlCode, ErrStat, ErrMsg)

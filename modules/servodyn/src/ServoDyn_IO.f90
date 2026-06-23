@@ -2497,6 +2497,7 @@ subroutine WrSumInfo4Simulink(p,SimulinkCtrlMode,UnSum)
       call WrCtrlInfo( p%HSSBrMode  ==SimulinkCtrlMode,'High speed shaft brake        ','(HSSBrFrac)                   ')
       call WrCtrlInfo( p%AfCmode    ==SimulinkCtrlMode,'Airfoil commands (flaps)      ','(BlAirfoilCom)                ')
       call WrCtrlInfo( p%CCmode     ==SimulinkCtrlMode,'Cable actuator control        ','(CableDeltaL,CableDeltaLdot)  ')
+      call WrCtrlInfo( p%StCCMode   ==SimulinkCtrlMode,'StC active control           ','(StCCmdStiff,Damp,Brake,Force,Moment)')
       write(UnSum, '(A)') ''
       write(UnSum, '(A)') '      Simulink inteface to OpenFAST library InputAry:'
       write(UnSum, '(A)') '           (check FAST_Library.f90 if errors)        '
@@ -2512,8 +2513,12 @@ subroutine WrSumInfo4Simulink(p,SimulinkCtrlMode,UnSum)
       write(UnSum, '(8x,A5,4x,A3,3x,A)')  '8     ','<--','HSSBrFrac              '
       write(UnSum, '(8x,A5,4x,A3,3x,A)')  '9:11  ','<--','BlAirfoilCom           '
       write(UnSum, '(8x,A5,4x,A3,3x,A)')  '12:31 ','<--','CableDeltaL            '
-      write(UnSum, '(8x,A5,4x,A3,3x,A)')  '32:51 ','<--','CableDektaLdot         '
-      write(UnSum, '(8x,A5,4x,A3,3x,A)')  '52:54 ','<--','Lidar focus (optional) '
+      write(UnSum, '(8x,A5,4x,A3,3x,A)')  '32:51 ','<--','CableDeltaLdot         '
+      write(UnSum, '(8x,A5,4x,A3,3x,A)')  '52:81 ','<--','StCCmdStiff            '
+      write(UnSum, '(8x,A5,4x,A3,3x,A)')  '82:111','<--','StCCmdDamp             '
+      write(UnSum, '(8x,A5,4x,A3,3x,A)')  '112:141','<--','StCCmdBrake            '
+      write(UnSum, '(8x,A5,4x,A3,3x,A)')  '142:171','<--','StCCmdForce            '
+      write(UnSum, '(8x,A5,4x,A3,3x,A)')  '172:201','<--','StCCmdMoment           '
    endif
 contains
    subroutine WrCtrlInfo( IsControlled, Desc, DataChans )

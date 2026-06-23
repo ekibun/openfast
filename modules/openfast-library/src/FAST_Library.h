@@ -65,11 +65,12 @@ EXTERNAL_ROUTINE void FAST_CreateCheckpoint(int * iTurb, const char *CheckpointR
 #define MAXIMUM_AFCTRL 3
 #define MAXIMUM_CABLE_DELTAL 20
 #define MAXIMUM_CABLE_DELTALDOT 20
+#define MAXIMUM_STC_CONTROL 10
 #define MAXIMUM_OUTPUTS 4000
 #define CHANNEL_LENGTH 20
-#define MAXInitINPUTS 53
+#define MAXInitINPUTS 203
 
-#define NumFixedInputs  (2 + 2 + MAXIMUM_BLADES + 1 + MAXIMUM_AFCTRL + MAXIMUM_CABLE_DELTAL + MAXIMUM_CABLE_DELTALDOT)
+#define NumFixedInputs  (2 + 2 + MAXIMUM_BLADES + 1 + MAXIMUM_AFCTRL + MAXIMUM_CABLE_DELTAL + MAXIMUM_CABLE_DELTALDOT + 5 * 3 * MAXIMUM_STC_CONTROL)
 /* Fixed inputs list:
     1       Generator Torque (N-m)
     2       Electrical Power (W)
@@ -80,6 +81,11 @@ EXTERNAL_ROUTINE void FAST_CreateCheckpoint(int * iTurb, const char *CheckpointR
     9-11    Blade 1-3 Airfoil control (-)
     12-31   Cable control channel 1-20 DeltaL (m)
     32-51   Cable control channel 1-20 DeltaLDot (m/s)
+    52-81   StC control Stiffness (3 DOF x 10 channels) (N/m)
+    82-111  StC control Damping   (3 DOF x 10 channels) (N/(m/s))
+    112-141 StC control Brake     (3 DOF x 10 channels) (N)
+    142-171 StC control Force     (3 DOF x 10 channels) (N)
+    172-201 StC control Moment    (3 DOF x 10 channels) (N-m)
 */
 
 #endif

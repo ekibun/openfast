@@ -1225,7 +1225,8 @@ SUBROUTINE StC_CalcContStateDeriv( Time, u, p, x, xd, z, OtherState, m, dxdt, Er
          m%F_fr    = 0.0_ReKi
       ELSE IF (p%StC_CMODE == CMODE_Semi) THEN ! ground hook control
          CALL StC_GroundHookDamp(dxdt,x,u,p,m%rdisp_P,m%rdot_P,m%C_ctrl,m%C_Brake,m%F_fr)
-      ELSE IF (p%StC_CMODE == CMODE_ActiveDLL) THEN   ! Active control from DLL
+      ELSE IF (p%StC_CMODE == CMODE_ActiveDLL .or. &
+               p%StC_CMODE == CMODE_ActiveEXTERN) THEN   ! Active control from DLL or Simulink (EXTERN)
          call StC_ActiveCtrl_StiffDamp(u,x,p,m%K,m%C_ctrl,m%C_Brake,m%F_ext,m%M_ext)
          m%F_fr    = 0.0_ReKi
          if (.not. p%Use_F_TBL) then
@@ -2115,7 +2116,7 @@ SUBROUTINE StC_ParseInputFileInfo( PriPath, InputFile, RootName, NumMeshPts, Fil
    call ParseVar( FileInfo_In, Curline, 'StC_CMODE', InputFileData%StC_CMODE, ErrStat2, ErrMsg2 )
       If (Failed()) return;
    ! Control channels -- there may be multiple if there are multiple StC mesh points (blade TMD case), but we also allow a single
-      ! StC_CChan     - Control channel group for stiffness and damping (StC_[XYZ]_K, StC_[XYZ]_C, and StC_[XYZ]_Brake) [used only when StC_CMODE=4 or StC_CMODE=5]
+      ! StC_CChan     - Control channel group for stiffness and damping (StC_[XYZ]_K, StC_[XYZ]_C, and StC_[XYZ]_Brake) [used only when StC_CMODE=4 (EXTERN/Simulink) or StC_CMODE=5 (DLL)]
    allocate( InputFileData%StC_CChan(NumMeshPts), STAT=ErrStat2 )    ! Blade TMD will possibly have independent TMD's for each instance
       if (ErrStat2 /= ErrID_None) ErrMsg2="Error allocating InputFileData%StC_CChan(NumMeshPts)"
       If (Failed()) return;
@@ -2295,30 +2296,35 @@ subroutine    StC_ValidatePrimaryData( InputFileData, InitInp, ErrStat, ErrMsg )
    IF (  InputFileData%StC_CMODE /= ControlMode_None     .and. &
          InputFileData%StC_CMODE /= CMODE_Semi           .and. &
          InputFileData%StC_CMODE /= CMODE_ActiveUsrSub   .and. &
+         InputFileData%StC_CMODE /= CMODE_ActiveEXTERN   .and. &
          InputFileData%StC_CMODE /= CMODE_ActiveDLL ) &
-         !InputFileData%StC_CMode /= CMODE_ActiveEXTERN   .and. &    ! Not an option at the moment --> 4 (active with Simulink control),
       CALL SetErrStat( ErrID_Fatal, 'Control mode (StC_CMode) must be '                                   //&
             trim(Num2LStr(ControlMode_None))  //' (none), '                                               //&
             trim(Num2LStr(CMODE_Semi))        //' (semi-active), '                                        //&
-            trim(Num2LStr(CMODE_ActiveUsrSub))//' (active with user subroutine), or '                     //&
+            trim(Num2LStr(CMODE_ActiveUsrSub))//' (active with user subroutine), '                        //&
+            trim(Num2LStr(CMODE_ActiveEXTERN))//' (active with Simulink control), or '                    //&
             trim(Num2LStr(CMODE_ActiveDLL))   //' (active with DLL control) in this version of StrucCtrl.', &
       ErrStat, ErrMsg, RoutineName )
 
       ! Check control channel
-   if ( InputFileData%StC_CMode == CMODE_ActiveUsrSub .or. InputFileData%StC_CMode == CMODE_ActiveDLL ) then
+   if ( InputFileData%StC_CMode == CMODE_ActiveUsrSub .or. &
+        InputFileData%StC_CMode == CMODE_ActiveDLL    .or. &
+        InputFileData%StC_CMode == CMODE_ActiveEXTERN ) then
       if ( InputFileData%StC_DOF_MODE /= DOFMode_Indept .and. &
            InputFileData%StC_DOF_MODE /= DOFMode_Omni   .and. &
            InputFileData%StC_DOF_MODE /= DOFMode_Omni3  .and. &
            InputFileData%StC_DOF_MODE /= DOFMode_ForceDLL) then
          call SetErrStat( ErrID_Fatal, &
-               'Control mode '//trim(Num2LStr(CMODE_ActiveUsrSub))//' (active with user subroutine) or '//&
+               'Control mode '//trim(Num2LStr(CMODE_ActiveUsrSub))//' (active with user subroutine), '//&
+                                trim(Num2LStr(CMODE_ActiveEXTERN))//' (active with Simulink control), '//&
                                 trim(Num2LStr(CMODE_ActiveDLL))   //' (active with DLL control) '       //&
                'can only be used with independent or omni DOF (StC_DOF_Mode='//trim(Num2LStr(DOFMode_Indept))//', '//&
                trim(Num2LStr(DOFMode_Omni))//', or '//trim(Num2LStr(DOFMode_Omni3))//') or external force (StC_DOF_Mode = '//&
                trim(Num2LStr(DOFMode_ForceDLL))//') in this version of StrucCtrl.', ErrStat, ErrMsg, RoutineName )
       endif
    endif
-   if ( InputFileData%StC_CMode == CMODE_ActiveDLL ) then
+   if ( InputFileData%StC_CMode == CMODE_ActiveDLL .or. &
+        InputFileData%StC_CMode == CMODE_ActiveEXTERN ) then
       if (InitInp%NumMeshPts > 1) then
          do i=2,InitInp%NumMeshPts  ! Warn if controlling multiple mesh points with single instance (blade TMD)
             if ( InputFileData%StC_CChan(i) == InputFileData%StC_CChan(1) ) then
@@ -2330,10 +2336,10 @@ subroutine    StC_ValidatePrimaryData( InputFileData, InitInp, ErrStat, ErrMsg )
       endif
       do i=1,InitInp%NumMeshPts     ! Check we are in range of number of control channel groups
          if ( InputFileData%StC_CChan(i) < 0 .or. InputFileData%StC_CChan(i) > 10 ) then
-            call SetErrStat( ErrID_Fatal, 'Control channel (StC_CChan) must be between 0 (off) and 10 when StC_CMode='//trim(Num2LStr(CMODE_ActiveDLL))//'.', ErrStat, ErrMsg, RoutineName )
+            call SetErrStat( ErrID_Fatal, 'Control channel (StC_CChan) must be between 0 (off) and 10 when StC_CMode='//trim(Num2LStr(CMODE_ActiveDLL))//' or '//trim(Num2LStr(CMODE_ActiveEXTERN))//'.', ErrStat, ErrMsg, RoutineName )
          endif
          if ( InputFileData%StC_CChan(i) == 0 ) then
-            call SetErrStat( ErrID_Warn, 'Control mode '//trim(Num2LStr(CMODE_ActiveDLL))//' (active with DLL control) requested, but no control channel specified.  No external force will be applied.', ErrStat, ErrMsg, RoutineName )
+            call SetErrStat( ErrID_Warn, 'Control mode '//trim(Num2LStr(InputFileData%StC_CMode))//' (active control) requested, but no control channel specified.  No external force will be applied.', ErrStat, ErrMsg, RoutineName )
          endif
       enddo
    endif
@@ -2370,8 +2376,8 @@ subroutine    StC_ValidatePrimaryData( InputFileData, InitInp, ErrStat, ErrMsg )
       endif
 
       ! Need active DLL control
-      if (InputFileData%StC_CMODE /= CMODE_ActiveDLL .and. InputFileData%StC_CMODE /= CMODE_ActiveUsrSub) THEN
-         call SetErrStat( ErrID_Fatal, 'StC_CMODE must be '//trim(Num2LStr(CMODE_ActiveUsrSub))//' or '//trim(Num2LStr(CMODE_ActiveDLL))//   &
+      if (InputFileData%StC_CMODE /= CMODE_ActiveDLL .and. InputFileData%StC_CMODE /= CMODE_ActiveEXTERN .and. InputFileData%StC_CMODE /= CMODE_ActiveUsrSub) THEN
+         call SetErrStat( ErrID_Fatal, 'StC_CMODE must be '//trim(Num2LStr(CMODE_ActiveUsrSub))//' or '//trim(Num2LStr(CMODE_ActiveEXTERN))//' or '//trim(Num2LStr(CMODE_ActiveDLL))//   &
                                  ' when StC_DOF_MODE is '//trim(Num2LStr(DOFMode_ForceDLL)) , ErrStat, ErrMsg, RoutineName )
       endif
    endif
@@ -2576,7 +2582,7 @@ SUBROUTINE StC_SetParameters( InputFileData, InitInp, p, Interval, ErrStat, ErrM
 
    ! StC Control channels
    call AllocAry( p%StC_CChan, p%NumMeshPts, 'p%StC_CChan', ErrStat2, ErrMsg2 )
-   if (p%StC_CMODE == CMODE_ActiveDLL ) then
+   if (p%StC_CMODE == CMODE_ActiveDLL .or. p%StC_CMODE == CMODE_ActiveEXTERN) then
       p%StC_CChan = InputFileData%StC_CChan
    else
       p%StC_CChan = 0   ! turn off regardless of input file request.
