@@ -1022,11 +1022,19 @@ SUBROUTINE StC_CalcOutput( Time, u, p, x, xd, z, OtherState, y, m, ErrStat, ErrM
       ELSEIF ( p%StC_DOF_MODE == DOFMode_ForceDLL ) THEN
          !  Note that the prescribed force is applied the same to all Mesh pts
          !  that are passed into this instance of the StC
-         ! Global coords only
-         do i_pt=1,p%NumMeshPts
-            y%Mesh(i_pt)%Force(1:3,1)  =  m%F_ext(1:3,i_pt)
-            y%Mesh(i_pt)%Moment(1:3,1) =  m%M_ext(1:3,i_pt)
-         enddo
+         if (p%PrescribedForcesCoordSys == PRESCRIBED_FORCE_GLOBAL) then
+            ! Global coords
+            do i_pt=1,p%NumMeshPts
+               y%Mesh(i_pt)%Force(1:3,1)  =  m%F_ext(1:3,i_pt)
+               y%Mesh(i_pt)%Moment(1:3,1) =  m%M_ext(1:3,i_pt)
+            enddo
+         elseif (p%PrescribedForcesCoordSys == PRESCRIBED_FORCE_LOCAL) then
+            ! local coords
+            do i_pt=1,p%NumMeshPts
+               y%Mesh(i_pt)%Force(1:3,1)  =  matmul(transpose(u%Mesh(i_pt)%Orientation(:,:,1)), m%F_ext(1:3,i_pt))
+               y%Mesh(i_pt)%Moment(1:3,1) =  matmul(transpose(u%Mesh(i_pt)%Orientation(:,:,1)), m%M_ext(1:3,i_pt))
+            enddo
+         endif
       END IF
 
       ! Set output values for the measured displacements for  
@@ -2366,16 +2374,16 @@ subroutine    StC_ValidatePrimaryData( InputFileData, InitInp, ErrStat, ErrMsg )
       endif
    endif
 
-      ! DLL Force - not sure if necessary, but nothing happens if these inputs are incorrect
+      ! DLL Force
    if (InputFileData%StC_DOF_MODE == DOFMode_ForceDLL) then
-      
-      ! Need global force coord
-      if (InputFileData%PrescribedForcesCoordSys /= PRESCRIBED_FORCE_GLOBAL) THEN
-         call SetErrStat( ErrID_Fatal, 'PrescribedForcesCoordSys must be global ('//trim(Num2LStr(PRESCRIBED_FORCE_GLOBAL))//   &
-                                 ') when StC_DOF_MODE is '//trim(Num2LStr(DOFMode_ForceDLL)) , ErrStat, ErrMsg, RoutineName )
+
+      ! Check force coordinate system
+      if (InputFileData%PrescribedForcesCoordSys /= PRESCRIBED_FORCE_GLOBAL .and. InputFileData%PrescribedForcesCoordSys /= PRESCRIBED_FORCE_LOCAL) THEN
+         call SetErrStat( ErrID_Fatal, 'PrescribedForcesCoordSys must be '//trim(Num2LStr(PRESCRIBED_FORCE_GLOBAL))//   &
+                                 ' (Global) or '//trim(Num2LStr(PRESCRIBED_FORCE_LOCAL))//' (local) when StC_DOF_MODE is '//trim(Num2LStr(DOFMode_ForceDLL)) , ErrStat, ErrMsg, RoutineName )
       endif
 
-      ! Need active DLL control
+      ! Need active DLL/EXTERN/UsrSub control
       if (InputFileData%StC_CMODE /= CMODE_ActiveDLL .and. InputFileData%StC_CMODE /= CMODE_ActiveEXTERN .and. InputFileData%StC_CMODE /= CMODE_ActiveUsrSub) THEN
          call SetErrStat( ErrID_Fatal, 'StC_CMODE must be '//trim(Num2LStr(CMODE_ActiveUsrSub))//' or '//trim(Num2LStr(CMODE_ActiveEXTERN))//' or '//trim(Num2LStr(CMODE_ActiveDLL))//   &
                                  ' when StC_DOF_MODE is '//trim(Num2LStr(DOFMode_ForceDLL)) , ErrStat, ErrMsg, RoutineName )
