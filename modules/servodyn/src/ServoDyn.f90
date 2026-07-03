@@ -2110,6 +2110,7 @@ SUBROUTINE SrvD_CalcOutput( t, u, p, x, xd, z, OtherState, y, m, ErrStat, ErrMsg
    if (p%NumNStC>0)     call Set_NStC_Outs(  p, x%NStC,  m%NStC,  m%y_NStC,  AllOuts )
    if (p%NumTStC>0)     call Set_TStC_Outs(  p, x%TStC,  m%TStC,  m%y_TStC,  AllOuts )
    if (p%NumSStC>0)     call Set_SStC_Outs(  p, x%SStC,  m%SStC,  m%y_SStC,  AllOuts )
+   call Set_StC_Kin_Ch_Outs( p, m%u_BStC, m%u_NStC, m%u_TStC, m%u_SStC, AllOuts )
   
    DO I = 1,p%NumOuts  ! Loop through all selected output channels
       y%WriteOutput(I) = p%OutParam(I)%SignM * AllOuts( p%OutParam(I)%Indx )
