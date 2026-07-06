@@ -2463,8 +2463,7 @@ END SUBROUTINE SetOutParam
 !----------------------------------------------------------------------------------------------------------------------------------
 SUBROUTINE Parse_StC_Kin_OutParam( OutName, p, Found, Invalid, Indx, Units )
 ! Dynamic OutList parser for StC section motion channels.
-! Valid names are StCCh1_PX through StCCh10_ALZ.  The channel number is StC_CChan.
-! Valid suffixes are PX/PY/PZ, VX/VY/VZ, AX/AY/AZ, RX/RY/RZ, WX/WY/WZ, and ALX/ALY/ALZ.
+! Valid names are StCCh1_PX through StCCh10_ALZ, formed as "STCCH"//chan//"_"//suffix.
 
    CHARACTER(*),              INTENT(IN   ) :: OutName
    TYPE(SrvD_ParameterType),  INTENT(IN   ) :: p
@@ -2473,89 +2472,62 @@ SUBROUTINE Parse_StC_Kin_OutParam( OutName, p, Found, Invalid, Indx, Units )
    INTEGER(IntKi),            INTENT(  OUT) :: Indx
    CHARACTER(ChanLen),        INTENT(  OUT) :: Units
 
-   INTEGER(IntKi)                           :: i, kin
-   CHARACTER(OutStrLenM1)                   :: Prefix
+   INTEGER(IntKi)                           :: chan, kin
+   INTEGER                                 :: usPos, ioErr, nameLen
+   CHARACTER(10)                            :: Suffix
+   CHARACTER(10)                            :: ChanStr
 
-   Found = .FALSE.
+   Found   = .FALSE.
    Invalid = .FALSE.
-   Indx = 0_IntKi
-   Units = "(-)"
+   Indx    = 0_IntKi
+   Units   = "(-)"
+   chan    = 0_IntKi
+   kin     = 0_IntKi
 
-   DO i=1,MaxStCControlOuts
-      WRITE(Prefix,'("STCCH",I0,"_")') i
-      CALL Try_StC_Kin_Channel( OutName, TRIM(Prefix), kin, Units, Found )
-      IF ( Found ) THEN
-         Indx = StC_Kin_Index_Ch(i,kin)
-         Invalid = ( p%NumStC_Control < i )
-         RETURN
-      END IF
-   END DO
+   ! Format check: must start with "STCCH" and contain "_"
+   nameLen = LEN_TRIM(OutName)
+   IF ( nameLen < 8 ) RETURN               ! min: "STCCH1_X" = 8 chars
+   IF ( OutName(1:5) /= "STCCH" ) RETURN
 
-END SUBROUTINE Parse_StC_Kin_OutParam
-!----------------------------------------------------------------------------------------------------------------------------------
-SUBROUTINE Try_StC_Kin_Channel( OutName, Prefix, Kin, Units, Found )
+   usPos = INDEX( OutName, "_" )
+   IF ( usPos < 7 .OR. usPos >= nameLen ) RETURN   ! need at least "STCCH1_" (7 chars) and a suffix
 
-   CHARACTER(*),       INTENT(IN   ) :: OutName
-   CHARACTER(*),       INTENT(IN   ) :: Prefix
-   INTEGER(IntKi),     INTENT(  OUT) :: Kin
-   CHARACTER(ChanLen), INTENT(  OUT) :: Units
-   LOGICAL,            INTENT(  OUT) :: Found
+   ! Parse channel number between "STCCH" and "_"
+   ChanStr = OutName(6:usPos-1)
+   READ(ChanStr,*,IOSTAT=ioErr) chan
+   IF ( ioErr /= 0 ) RETURN
+   IF ( chan < 1 .OR. chan > MaxStCControlOuts ) RETURN
 
-   CHARACTER(OutStrLenM1)            :: Suffix
-   INTEGER(IntKi)                    :: PrefixLen
-
-   Found = .FALSE.
-   Kin = 0_IntKi
-   Units = "(-)"
-   PrefixLen = LEN_TRIM(Prefix)
-
-   IF ( LEN_TRIM(OutName) <= PrefixLen ) RETURN
-   IF ( OutName(1:PrefixLen) /= Prefix(1:PrefixLen) ) RETURN
-
-   Suffix = ADJUSTL( OutName(PrefixLen+1:) )
+   ! Match suffix (after "_")
+   Suffix = ADJUSTL( OutName(usPos+1:) )
 
    SELECT CASE ( TRIM(Suffix) )
-   CASE ( "PX" )
-      Kin = StC_Kin_PX;  Units = "(m)"
-   CASE ( "PY" )
-      Kin = StC_Kin_PY;  Units = "(m)"
-   CASE ( "PZ" )
-      Kin = StC_Kin_PZ;  Units = "(m)"
-   CASE ( "VX" )
-      Kin = StC_Kin_VX;  Units = "(m/s)"
-   CASE ( "VY" )
-      Kin = StC_Kin_VY;  Units = "(m/s)"
-   CASE ( "VZ" )
-      Kin = StC_Kin_VZ;  Units = "(m/s)"
-   CASE ( "AX" )
-      Kin = StC_Kin_AX;  Units = "(m/s^2)"
-   CASE ( "AY" )
-      Kin = StC_Kin_AY;  Units = "(m/s^2)"
-   CASE ( "AZ" )
-      Kin = StC_Kin_AZ;  Units = "(m/s^2)"
-   CASE ( "RX" )
-      Kin = StC_Kin_RX;  Units = "(deg)"
-   CASE ( "RY" )
-      Kin = StC_Kin_RY;  Units = "(deg)"
-   CASE ( "RZ" )
-      Kin = StC_Kin_RZ;  Units = "(deg)"
-   CASE ( "WX" )
-      Kin = StC_Kin_WX;  Units = "(deg/s)"
-   CASE ( "WY" )
-      Kin = StC_Kin_WY;  Units = "(deg/s)"
-   CASE ( "WZ" )
-      Kin = StC_Kin_WZ;  Units = "(deg/s)"
-   CASE ( "ALX" )
-      Kin = StC_Kin_ALX; Units = "(deg/s^2)"
-   CASE ( "ALY" )
-      Kin = StC_Kin_ALY; Units = "(deg/s^2)"
-   CASE ( "ALZ" )
-      Kin = StC_Kin_ALZ; Units = "(deg/s^2)"
+   CASE ( "PX" );  kin = StC_Kin_PX;  Units = "(m)"
+   CASE ( "PY" );  kin = StC_Kin_PY;  Units = "(m)"
+   CASE ( "PZ" );  kin = StC_Kin_PZ;  Units = "(m)"
+   CASE ( "VX" );  kin = StC_Kin_VX;  Units = "(m/s)"
+   CASE ( "VY" );  kin = StC_Kin_VY;  Units = "(m/s)"
+   CASE ( "VZ" );  kin = StC_Kin_VZ;  Units = "(m/s)"
+   CASE ( "AX" );  kin = StC_Kin_AX;  Units = "(m/s^2)"
+   CASE ( "AY" );  kin = StC_Kin_AY;  Units = "(m/s^2)"
+   CASE ( "AZ" );  kin = StC_Kin_AZ;  Units = "(m/s^2)"
+   CASE ( "RX" );  kin = StC_Kin_RX;  Units = "(deg)"
+   CASE ( "RY" );  kin = StC_Kin_RY;  Units = "(deg)"
+   CASE ( "RZ" );  kin = StC_Kin_RZ;  Units = "(deg)"
+   CASE ( "WX" );  kin = StC_Kin_WX;  Units = "(deg/s)"
+   CASE ( "WY" );  kin = StC_Kin_WY;  Units = "(deg/s)"
+   CASE ( "WZ" );  kin = StC_Kin_WZ;  Units = "(deg/s)"
+   CASE ( "ALX" ); kin = StC_Kin_ALX; Units = "(deg/s^2)"
+   CASE ( "ALY" ); kin = StC_Kin_ALY; Units = "(deg/s^2)"
+   CASE ( "ALZ" ); kin = StC_Kin_ALZ; Units = "(deg/s^2)"
+   CASE DEFAULT;    RETURN
    END SELECT
 
-   Found = ( Kin > 0_IntKi )
+   Found   = .TRUE.
+   Invalid = .FALSE.
+   Indx    = StC_Kin_Start + (chan-1)*StC_Kin_Num + kin - 1
 
-END SUBROUTINE Try_StC_Kin_Channel
+END SUBROUTINE Parse_StC_Kin_OutParam
 !----------------------------------------------------------------------------------------------------------------------------------
 INTEGER(IntKi) FUNCTION StC_Kin_Index_Ch( chan, kin )
    INTEGER(IntKi), INTENT(IN) :: chan, kin
@@ -2580,30 +2552,26 @@ SUBROUTINE Set_StC_Kin_Ch_Outs( p_SrvD, u_BStC, u_NStC, u_TStC, u_SStC, AllOuts 
    IF ( ALLOCATED(u_BStC) ) THEN
       DO i=1,MIN(p_SrvD%NumBStC,MaxStC)
          DO j=1,MIN(p_SrvD%NumBl,MaxBlOuts)
-            chan = StC_CChan_At(p_SrvD%BStC(i)%StC_CChan,j)
-            CALL Accum_StC_Kin_Outs( chan, u_BStC(1,i), j, AllOuts, NumPerChan )
+            CALL Accum_StC_Kin_Outs( p_SrvD%BStC(i)%StC_CChan(j), u_BStC(1,i), j, AllOuts, NumPerChan )
          END DO
       END DO
    END IF
 
    IF ( ALLOCATED(u_NStC) ) THEN
       DO i=1,MIN(p_SrvD%NumNStC,MaxStC)
-         chan = StC_CChan_At(p_SrvD%NStC(i)%StC_CChan,1)
-         CALL Accum_StC_Kin_Outs( chan, u_NStC(1,i), 1, AllOuts, NumPerChan )
+         CALL Accum_StC_Kin_Outs( p_SrvD%NStC(i)%StC_CChan(1), u_NStC(1,i), 1, AllOuts, NumPerChan )
       END DO
    END IF
 
    IF ( ALLOCATED(u_TStC) ) THEN
       DO i=1,MIN(p_SrvD%NumTStC,MaxStC)
-         chan = StC_CChan_At(p_SrvD%TStC(i)%StC_CChan,1)
-         CALL Accum_StC_Kin_Outs( chan, u_TStC(1,i), 1, AllOuts, NumPerChan )
+         CALL Accum_StC_Kin_Outs( p_SrvD%TStC(i)%StC_CChan(1), u_TStC(1,i), 1, AllOuts, NumPerChan )
       END DO
    END IF
 
    IF ( ALLOCATED(u_SStC) ) THEN
       DO i=1,MIN(p_SrvD%NumSStC,MaxStC)
-         chan = StC_CChan_At(p_SrvD%SStC(i)%StC_CChan,1)
-         CALL Accum_StC_Kin_Outs( chan, u_SStC(1,i), 1, AllOuts, NumPerChan )
+         CALL Accum_StC_Kin_Outs( p_SrvD%SStC(i)%StC_CChan(1), u_SStC(1,i), 1, AllOuts, NumPerChan )
       END DO
    END IF
 
@@ -2616,15 +2584,6 @@ SUBROUTINE Set_StC_Kin_Ch_Outs( p_SrvD, u_BStC, u_NStC, u_TStC, u_SStC, AllOuts 
    END DO
 
 END SUBROUTINE Set_StC_Kin_Ch_Outs
-!----------------------------------------------------------------------------------------------------------------------------------
-INTEGER(IntKi) FUNCTION StC_CChan_At( CChan, j )
-   INTEGER(IntKi), ALLOCATABLE, INTENT(IN) :: CChan(:)
-   INTEGER(IntKi),              INTENT(IN) :: j
-   StC_CChan_At = 0_IntKi
-   IF ( .NOT. ALLOCATED(CChan) ) RETURN
-   IF ( j < LBOUND(CChan,1) .OR. j > UBOUND(CChan,1) ) RETURN
-   StC_CChan_At = CChan(j)
-END FUNCTION StC_CChan_At
 !----------------------------------------------------------------------------------------------------------------------------------
 SUBROUTINE Accum_StC_Kin_Outs( Chan, u, j, AllOuts, NumPerChan )
 
