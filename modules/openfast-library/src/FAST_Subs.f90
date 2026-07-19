@@ -5167,6 +5167,20 @@ contains
 
 END SUBROUTINE FAST_Prework_T
 !----------------------------------------------------------------------------------------------------------------------------------
+!> Apply changed external controller commands to the current ServoDyn input
+!! slot without repeating FAST_Prework_T's extrapolation.
+SUBROUTINE FAST_ApplyExternalInputs_T(Turbine)
+
+   TYPE(FAST_TurbineType), INTENT(INOUT) :: Turbine
+   INTEGER(IntKi)                        :: i
+
+   IF (Turbine%p_FAST%CompServo == Module_SrvD) THEN
+      DO i = 1, Turbine%p_FAST%NRotors
+         CALL SrvD_SetExternalInputs(Turbine%p_FAST, Turbine%m_FAST, Turbine%SrvD%Input(INPUT_CURR,i))
+      END DO
+   END IF
+
+END SUBROUTINE FAST_ApplyExternalInputs_T
 !----------------------------------------------------------------------------------------------------------------------------------
 !> Routine that calls FAST_UpdateStates for one instance of a Turbine data structure. This is a separate subroutine so that the FAST
 !! driver programs do not need to change or operate on the individual module level.

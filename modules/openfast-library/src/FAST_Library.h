@@ -47,6 +47,9 @@ EXTERNAL_ROUTINE void FAST_Sizes(int * iTurb, const char *InputFileName, int *Ab
 #endif
 EXTERNAL_ROUTINE void FAST_Start(int * iTurb, int *NumInputs_c, int *NumOutputs_c, double *InputAry, double *OutputAry, int *ErrStat, char *ErrMsg);
 EXTERNAL_ROUTINE void FAST_Update(int * iTurb, int *NumInputs_c, int *NumOutputs_c, double *InputAry, double *OutputAry, bool *EndSimulationEarly, int *ErrStat, char *ErrMsg);
+EXTERNAL_ROUTINE void FAST_CouplingBegin(int *iTurb, int *NumInputs, double *InputAry, int *ErrStat, char *ErrMsg);
+EXTERNAL_ROUTINE void FAST_CouplingIterate(int *iTurb, int *NumInputs, int *NumOutputs, double *InputAry, double *OutputAry, double *Residual, int *ErrStat, char *ErrMsg);
+EXTERNAL_ROUTINE void FAST_CouplingCommit(int *iTurb, bool *EndSimulationEarly, int *ErrStat, char *ErrMsg);
 EXTERNAL_ROUTINE void FAST_End(int * iTurb, bool * stopThisProgram);
 EXTERNAL_ROUTINE void FAST_CreateCheckpoint(int * iTurb, const char *CheckpointRootName, int *ErrStat, char *ErrMsg);
 

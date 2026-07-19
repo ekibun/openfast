@@ -57,6 +57,12 @@ static int ErrStat2 = 0;
 static char ErrMsg2[INTERFACE_STRING_LENGTH];        // make sure this is the same size as IntfStrLen in FAST_Library.f90
 static char InputFileName[INTERFACE_STRING_LENGTH]; // make sure this is the same size as IntfStrLen in FAST_Library.f90
 static int n_t_global = -2;  // counter to determine which fixed-step simulation time we are at currently (start at -2 for initialization)
+static bool CouplingActive = false;
+static bool NewStepPending = false;
+static int AlgLoopCount = 0;
+static double CouplingResidual = 0.0;
+static double PreviousInputAry[MAXInitINPUTS];
+static bool PreviousInputValid = false;
 static int AbortErrLev = ErrID_Fatal;      // abort error level; compare with NWTC Library
 
 // function definitions
@@ -259,7 +265,7 @@ static void mdlInitializeSizes(SimStruct *S)
         * A port has direct feedthrough if the input is used in either
         * the mdlOutputs or mdlGetTimeOfNextVarHit functions.
         */
-       ssSetInputPortDirectFeedThrough(S, 0, 0); // no direct feedthrough because we're just putting everything in one update routine (acting like a discrete system)
+       ssSetInputPortDirectFeedThrough(S, 0, 1); // mdlOutputs uses the current trial input
 
        if (!ssSetNumOutputPorts(S, 1)) return;
        ssSetOutputPortWidth(S, 0, NumOutputs);
@@ -344,6 +350,9 @@ static void mdlInitializeSampleTimes(SimStruct *S)
 
         FAST_Start(&iTurb, &NumInputs, &NumOutputs, InputAry, OutputAry, &ErrStat, ErrMsg);
         n_t_global = 0;
+        CouplingActive = false;
+        AlgLoopCount = 0;
+        CouplingResidual = 1.0;
         if (checkError(S)) return;
 
      }
@@ -379,6 +388,8 @@ static void mdlOutputs(SimStruct *S, int_T tid)
     
     double *InputAry  = (double *)ssGetDWork(S, WORKARY_INPUT);
     double *OutputAry = (double *)ssGetDWork(S, WORKARY_OUTPUT);
+    bool Recalculate;
+    int i;
 
     if (n_t_global == -1){ // first time to compute outputs:
 
@@ -388,6 +399,43 @@ static void mdlOutputs(SimStruct *S, int_T tid)
        n_t_global = 0;
        if (checkError(S)) return;
 
+    }
+
+    /* FAST_Start already supplied the output at t=0.  At later sample hits,
+       every algebraic-loop evaluation advances exactly one OpenFAST ConvIter. */
+    if (ssIsMajorTimeStep(S) && ssIsSampleHit(S, 0, tid) && ssGetT(S) > 0.0) {
+       getInputs(S, InputAry);
+
+       if (!CouplingActive) {
+          FAST_CouplingBegin(&iTurb, &NumInputs, InputAry, &ErrStat, ErrMsg);
+          if (checkError(S)) return;
+          CouplingActive = true;
+          AlgLoopCount = 0;
+          PreviousInputValid = false;
+       } else {
+         AlgLoopCount++;
+       }
+       Recalculate = !PreviousInputValid;
+       if (PreviousInputValid) {
+          for (i = 0; i < NumInputs; ++i) {
+             if (fabs(InputAry[i] - PreviousInputAry[i])/(fabs(InputAry[i])+1e-10) > 1e-5) {
+                Recalculate = true;
+                break;
+             }
+          }
+       }
+       if (Recalculate) {
+         FAST_CouplingIterate(&iTurb, &NumInputs, &NumOutputs, InputAry,
+                              OutputAry, &CouplingResidual, &ErrStat, ErrMsg);
+         if (checkError(S)) return;
+
+         ssPrintf("[FAST_SFunc] t=%.6f iter=%d res=%.6f [%.6f,%.6f,%.6f,%.6f,%.6f,%.6f]\n",
+                  ssGetT(S), AlgLoopCount, CouplingResidual,
+                  InputAry[141], InputAry[142], InputAry[143],
+                  InputAry[171], InputAry[172], InputAry[173]);
+         for (i = 0; i < NumInputs; ++i) PreviousInputAry[i] = InputAry[i];
+         PreviousInputValid = true;
+       }
     }
 
     setOutputs(S, OutputAry);
@@ -415,16 +463,23 @@ static void mdlUpdate(SimStruct *S, int_T tid)
      * in mdlOutputs().  The states in the Fortran code need not be
      * continuous if you call your code from here.
      */
-    double *InputAry  = (double *)ssGetDWork(S, WORKARY_INPUT);
-    double *OutputAry = (double *)ssGetDWork(S, WORKARY_OUTPUT);
+    /* mdlUpdate is called after Simulink accepts the major time point.  It
+       commits the prediction produced in mdlOutputs; it never performs a
+       further OpenFAST convergence iteration. */
+    if (!CouplingActive) {
+       /* The initial point has no trial to commit.  Its accepted mdlUpdate
+          still marks the first OpenFAST step as pending. */
+       NewStepPending = true;
+       AlgLoopCount = 0;
+       return;
+    }
+    ssPrintf("[FAST_SFunc] t=%.6f: algebraic loop iter %d\n", ssGetT(S), AlgLoopCount);
 
-    //time_T t = ssGetSampleTime(S, 0);
-
-    getInputs(S, InputAry);
-
-    /* ==== Call the Fortran routine (args are pass-by-reference) */
-    
-    FAST_Update(&iTurb, &NumInputs, &NumOutputs, InputAry, OutputAry, &EndEarly, &ErrStat, ErrMsg);
+    FAST_CouplingCommit(&iTurb, &EndEarly, &ErrStat, ErrMsg);
+    if (checkError(S)) return;
+    CouplingActive = false;
+    AlgLoopCount = 0;
+    PreviousInputValid = false;
     n_t_global = n_t_global + 1;
 
    // For trim solution or any other reason to end early when there is no error
@@ -432,11 +487,6 @@ static void mdlUpdate(SimStruct *S, int_T tid)
       mdlTerminate(S);  // terminate after simulation completes (in case Simulink doesn't do so itself)
       return;
    }
-
-   // Handle errors
-    if (checkError(S)) return;
-
-    setOutputs(S, OutputAry);
 
 }
 #endif /* MDL_UPDATE */
@@ -456,6 +506,10 @@ static void mdlTerminate(SimStruct *S)
       bool tr = 1; // Yes, stoptheprogram
       FAST_End(&iTurb, &tr);
       n_t_global = -2;
+      CouplingActive = false;
+      AlgLoopCount = 0;
+      CouplingResidual = 0.0;
+      PreviousInputValid = false;
    }  
    FAST_DeallocateTurbines(&ErrStat2, ErrMsg2);
    if (ErrStat2 != ErrID_None){

@@ -16,6 +16,7 @@ MODULE FAST_Data
    USE FAST_Types
    USE FAST_Subs, only: ExitThisProgram_T, &
                         FAST_AdvanceToNextTimeStep_T, &
+                        FAST_ApplyExternalInputs_T, &
                         FAST_CreateCheckpoint_T, &
                         FAST_InitIOarrays_SubStep_T, &
                         FAST_InitializeAll_T, &
@@ -29,6 +30,7 @@ MODULE FAST_Data
                         FAST_UpdateStates_T, &
                         FAST_WriteOutput_T, &
                         FillOutputAry_T
+   USE FAST_Solver, only: FAST_CouplingContext, FAST_CouplingContextReset, FAST_SimulinkIterateStep
 
    IMPLICIT  NONE
    SAVE
@@ -43,6 +45,7 @@ MODULE FAST_Data
    
       ! Global (static) data:
    TYPE(FAST_TurbineType), ALLOCATABLE, private :: Turbine(:)               ! Data for each turbine
+   TYPE(FAST_CouplingContext), ALLOCATABLE, private :: CouplingContext(:)   ! External nonlinear iteration state
    INTEGER(IntKi), private                      :: NumTurbines
    INTEGER(IntKi), private                      :: n_t_global               ! simulation time step, loop counter for global (FAST) simulation
    INTEGER(IntKi), private                      :: ErrStat                  ! Error status
@@ -59,6 +62,7 @@ subroutine FAST_AllocateTurbines(nTurbines, ErrStat_c, ErrMsg_c) BIND (C, NAME='
    INTEGER(C_INT),         INTENT(IN   ) :: nTurbines
    INTEGER(C_INT),         INTENT(  OUT) :: ErrStat_c
    CHARACTER(KIND=C_CHAR), INTENT(  OUT) :: ErrMsg_c(IntfStrLen)
+   INTEGER(IntKi)                      :: i
 
    if (nTurbines > 0) then
       NumTurbines = nTurbines
@@ -69,7 +73,7 @@ subroutine FAST_AllocateTurbines(nTurbines, ErrStat_c, ErrMsg_c) BIND (C, NAME='
       call wrscr1('Proceeding anyway.')
    end if
 
-   allocate(Turbine(1:NumTurbines),Stat=ErrStat) !Allocate in F style -- all logic inside FAST_Subs is based on index 1 start, not C style index 0
+   allocate(Turbine(1:NumTurbines),CouplingContext(1:NumTurbines),Stat=ErrStat) ! Fortran indexing starts at 1
 
    if (ErrStat /= 0) then
       ErrStat_c = ErrID_Fatal
@@ -77,6 +81,9 @@ subroutine FAST_AllocateTurbines(nTurbines, ErrStat_c, ErrMsg_c) BIND (C, NAME='
    else
       ErrStat_c = ErrID_None
       ErrMsg = " "//C_NULL_CHAR
+      DO i = 1, NumTurbines
+         CALL FAST_CouplingContextReset(CouplingContext(i))
+      END DO
    end if
    ErrMsg_c  = TRANSFER( ErrMsg//C_NULL_CHAR, ErrMsg_c )
 
@@ -93,6 +100,9 @@ subroutine FAST_DeallocateTurbines(ErrStat_c, ErrMsg_c) BIND (C, NAME='FAST_Deal
 
    if (Allocated(Turbine)) then
       deallocate(Turbine)
+   end if
+   if (Allocated(CouplingContext)) then
+      deallocate(CouplingContext)
    end if
 
    ErrStat_c = ErrID_None
@@ -344,6 +354,127 @@ subroutine FAST_Update(iTurb_c, NumInputs_c, NumOutputs_c, InputAry, OutputAry, 
 #endif
 
 end subroutine FAST_Update
+!==================================================================================================================================
+!> Start one OpenFAST time step whose convergence iterations are driven externally.
+subroutine FAST_CouplingBegin(iTurb_c, NumInputs_c, InputAry, ErrStat_c, ErrMsg_c) BIND (C, NAME='FAST_CouplingBegin')
+   IMPLICIT NONE
+#ifndef IMPLICIT_DLLEXPORT
+!DEC$ ATTRIBUTES DLLEXPORT :: FAST_CouplingBegin
+!GCC$ ATTRIBUTES DLLEXPORT :: FAST_CouplingBegin
+#endif
+   INTEGER(C_INT),         INTENT(IN)  :: iTurb_c, NumInputs_c
+   REAL(C_DOUBLE),         INTENT(IN)  :: InputAry(NumInputs_c)
+   INTEGER(C_INT),         INTENT(OUT) :: ErrStat_c
+   CHARACTER(KIND=C_CHAR), INTENT(OUT) :: ErrMsg_c(IntfStrLen)
+   INTEGER(IntKi) :: iTurb, ErrStat2
+   CHARACTER(IntfStrLen-1) :: ErrMsg2
+
+   iTurb = INT(iTurb_c,IntKi) + 1
+   ErrStat = ErrID_None; ErrMsg = ''
+   IF (.NOT. ALLOCATED(Turbine) .OR. iTurb < 1 .OR. iTurb > NumTurbines) THEN
+      ErrStat = ErrID_Fatal; ErrMsg = 'FAST_CouplingBegin: invalid turbine index.'
+   ELSEIF (NumInputs_c /= NumFixedInputs .AND. NumInputs_c /= NumFixedInputs+3) THEN
+      ErrStat = ErrID_Fatal; ErrMsg = 'FAST_CouplingBegin:size of InputAry is invalid.'
+   ELSEIF (CouplingContext(iTurb)%Begun) THEN
+      ErrStat = ErrID_Fatal; ErrMsg = 'FAST_CouplingBegin: a coupling step is already active.'
+   ELSEIF (n_t_global > Turbine(iTurb)%p_FAST%n_TMax_m1) THEN
+      ErrStat = ErrID_Info; ErrMsg = 'Simulation completed.'
+   ELSE
+      CALL FAST_Prework_T(t_initial, n_t_global, Turbine(iTurb), ErrStat, ErrMsg)
+      IF (ErrStat < AbortErrLev) THEN
+         CALL FAST_SetExternalInputs(iTurb, NumInputs_c, InputAry, Turbine(iTurb)%m_FAST)
+         CALL FAST_ApplyExternalInputs_T(Turbine(iTurb))
+         CALL FAST_CouplingContextReset(CouplingContext(iTurb))
+         CouplingContext(iTurb)%Begun = .TRUE.
+      END IF
+   END IF
+   ErrStat_c = ErrStat
+   ErrMsg_c = TRANSFER(TRIM(ErrMsg)//C_NULL_CHAR, ErrMsg_c)
+end subroutine FAST_CouplingBegin
+!==================================================================================================================================
+!> Execute exactly one OpenFAST convergence iteration and expose its trial outputs.
+subroutine FAST_CouplingIterate(iTurb_c, NumInputs_c, NumOutputs_c, InputAry, OutputAry, Residual_c, ErrStat_c, ErrMsg_c) &
+   BIND (C, NAME='FAST_CouplingIterate')
+   IMPLICIT NONE
+#ifndef IMPLICIT_DLLEXPORT
+!DEC$ ATTRIBUTES DLLEXPORT :: FAST_CouplingIterate
+!GCC$ ATTRIBUTES DLLEXPORT :: FAST_CouplingIterate
+#endif
+   INTEGER(C_INT),         INTENT(IN)  :: iTurb_c, NumInputs_c, NumOutputs_c
+   REAL(C_DOUBLE),         INTENT(IN)  :: InputAry(NumInputs_c)
+   REAL(C_DOUBLE),         INTENT(OUT) :: OutputAry(NumOutputs_c)
+   REAL(C_DOUBLE),         INTENT(OUT) :: Residual_c
+   INTEGER(C_INT),         INTENT(OUT) :: ErrStat_c
+   CHARACTER(KIND=C_CHAR), INTENT(OUT) :: ErrMsg_c(IntfStrLen)
+   INTEGER(IntKi) :: iTurb
+   REAL(ReKi) :: Outputs(NumOutputs_c-1)
+
+   iTurb = INT(iTurb_c,IntKi) + 1
+   ErrStat = ErrID_None; ErrMsg = ''
+   OutputAry = 0.0_C_DOUBLE
+   Residual_c = 0.0_C_DOUBLE
+   IF (.NOT. ALLOCATED(Turbine) .OR. iTurb < 1 .OR. iTurb > NumTurbines) THEN
+      ErrStat = ErrID_Fatal; ErrMsg = 'FAST_CouplingIterate: invalid turbine index.'
+   ELSEIF (NumInputs_c /= NumFixedInputs .AND. NumInputs_c /= NumFixedInputs+3) THEN
+      ErrStat = ErrID_Fatal; ErrMsg = 'FAST_CouplingIterate:size of InputAry is invalid.'
+   ELSEIF (NumOutputs_c /= SIZE(Turbine(iTurb)%y_FAST%ChannelNames)) THEN
+      ErrStat = ErrID_Fatal; ErrMsg = 'FAST_CouplingIterate:size of OutputAry is invalid.'
+   ELSEIF (.NOT. CouplingContext(iTurb)%Begun) THEN
+      ErrStat = ErrID_Fatal; ErrMsg = 'FAST_CouplingIterate: no coupling step is active.'
+   ELSE
+      CALL FAST_SetExternalInputs(iTurb, NumInputs_c, InputAry, Turbine(iTurb)%m_FAST)
+      CALL FAST_ApplyExternalInputs_T(Turbine(iTurb))
+      CALL FAST_SimulinkIterateStep(n_t_global, t_initial, Turbine(iTurb)%p_Glue%TC, Turbine(iTurb)%m_Glue%TC, &
+           Turbine(iTurb)%m_Glue%ModData, Turbine(iTurb)%m_Glue%Mappings, Turbine(iTurb), &
+           CouplingContext(iTurb), ErrStat, ErrMsg)
+      Residual_c = REAL(CouplingContext(iTurb)%ConvError, C_DOUBLE)
+      IF (ErrStat < AbortErrLev) THEN
+         CALL FillOutputAry_T(Turbine(iTurb), Outputs)
+         OutputAry(1) = Turbine(iTurb)%m_FAST%t_global + Turbine(iTurb)%p_FAST%DT
+         OutputAry(2:NumOutputs_c) = Outputs
+      END IF
+   END IF
+   ErrStat_c = ErrStat
+   ErrMsg_c = TRANSFER(TRIM(ErrMsg)//C_NULL_CHAR, ErrMsg_c)
+end subroutine FAST_CouplingIterate
+!==================================================================================================================================
+!> Commit the converged predicted state and perform the normal end-of-step work.
+subroutine FAST_CouplingCommit(iTurb_c, EndSimulationEarly, ErrStat_c, ErrMsg_c) BIND (C, NAME='FAST_CouplingCommit')
+   IMPLICIT NONE
+#ifndef IMPLICIT_DLLEXPORT
+!DEC$ ATTRIBUTES DLLEXPORT :: FAST_CouplingCommit
+!GCC$ ATTRIBUTES DLLEXPORT :: FAST_CouplingCommit
+#endif
+   INTEGER(C_INT),         INTENT(IN)  :: iTurb_c
+   LOGICAL(C_BOOL),        INTENT(OUT) :: EndSimulationEarly
+   INTEGER(C_INT),         INTENT(OUT) :: ErrStat_c
+   CHARACTER(KIND=C_CHAR), INTENT(OUT) :: ErrMsg_c(IntfStrLen)
+   INTEGER(IntKi) :: iTurb, ErrStat2
+   CHARACTER(IntfStrLen-1) :: ErrMsg2
+
+   iTurb = INT(iTurb_c,IntKi) + 1
+   ErrStat = ErrID_None; ErrMsg = ''; EndSimulationEarly = .FALSE.
+   IF (.NOT. ALLOCATED(Turbine) .OR. iTurb < 1 .OR. iTurb > NumTurbines) THEN
+      ErrStat = ErrID_Fatal; ErrMsg = 'FAST_CouplingCommit: invalid turbine index.'
+   ELSEIF (.NOT. CouplingContext(iTurb)%Begun) THEN
+      ErrStat = ErrID_Fatal; ErrMsg = 'FAST_CouplingCommit: no coupling step is active.'
+   ELSE
+      CALL FAST_AdvanceToNextTimeStep_T(t_initial, n_t_global, Turbine(iTurb), ErrStat, ErrMsg)
+      IF (ErrStat < AbortErrLev) THEN
+         n_t_global = n_t_global + 1
+         CALL FAST_Linearize_T(t_initial, n_t_global, Turbine(iTurb), ErrStat2, ErrMsg2)
+         CALL SetErrStat(ErrStat2, ErrMsg2, ErrStat, ErrMsg, 'FAST_CouplingCommit')
+      END IF
+      IF (ErrStat < AbortErrLev) THEN
+         CALL FAST_WriteOutput_T(t_initial, n_t_global, Turbine(iTurb), ErrStat2, ErrMsg2)
+         CALL SetErrStat(ErrStat2, ErrMsg2, ErrStat, ErrMsg, 'FAST_CouplingCommit')
+      END IF
+      EndSimulationEarly = Turbine(iTurb)%m_Glue%CS%FoundSteady
+      CALL FAST_CouplingContextReset(CouplingContext(iTurb))
+   END IF
+   ErrStat_c = ErrStat
+   ErrMsg_c = TRANSFER(TRIM(ErrMsg)//C_NULL_CHAR, ErrMsg_c)
+end subroutine FAST_CouplingCommit
 !==================================================================================================================================
 ! Get the hub's absolute position, rotation velocity, and orientation DCM for the current time step
 subroutine FAST_HubPosition(iTurb_c, AbsPosition_c, RotationalVel_c, Orientation_c, ErrStat_c, ErrMsg_c) BIND (C, NAME='FAST_HubPosition')
