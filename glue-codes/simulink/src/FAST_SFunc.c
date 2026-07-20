@@ -58,6 +58,9 @@ static char ErrMsg2[INTERFACE_STRING_LENGTH];        // make sure this is the sa
 static char InputFileName[INTERFACE_STRING_LENGTH]; // make sure this is the same size as IntfStrLen in FAST_Library.f90
 static int n_t_global = -2;  // counter to determine which fixed-step simulation time we are at currently (start at -2 for initialization)
 static int AbortErrLev = ErrID_Fatal;      // abort error level; compare with NWTC Library
+static int newStepPending = 0;        // flag: new step computation needed in mdlOutputs
+static int algLoopCount = 0;          // counter for algebraic loop iterations within a step
+static double PreviousInputAry[MAXInitINPUTS];
 
 // function definitions
 static int checkError(SimStruct *S);
@@ -259,7 +262,7 @@ static void mdlInitializeSizes(SimStruct *S)
         * A port has direct feedthrough if the input is used in either
         * the mdlOutputs or mdlGetTimeOfNextVarHit functions.
         */
-       ssSetInputPortDirectFeedThrough(S, 0, 0); // no direct feedthrough because we're just putting everything in one update routine (acting like a discrete system)
+       ssSetInputPortDirectFeedThrough(S, 0, 1); // direct feedthrough enabled for tight coupling: mdlOutputs reads inputs, supports algebraic loop sub-step iteration
 
        if (!ssSetNumOutputPorts(S, 1)) return;
        ssSetOutputPortWidth(S, 0, NumOutputs);
@@ -340,10 +343,11 @@ static void mdlInitializeSampleTimes(SimStruct *S)
      //n_t_global is -1 here; maybe use this fact in mdlOutputs
      if (n_t_global == -1){ // first time to compute outputs:
 
-//        getInputs(S, InputAry);
+        getInputs(S, InputAry);
 
-        FAST_Start(&iTurb, &NumInputs, &NumOutputs, InputAry, OutputAry, &ErrStat, ErrMsg);
+        FAST_Simulink_Init(&iTurb, &NumInputs, &NumOutputs, InputAry, OutputAry, &ErrStat, ErrMsg);
         n_t_global = 0;
+        newStepPending = 1;   // first major step computation pending
         if (checkError(S)) return;
 
      }
@@ -352,42 +356,47 @@ static void mdlInitializeSampleTimes(SimStruct *S)
 
 /* Function: mdlOutputs =======================================================
  * Abstract:
- *    In this function, you compute the outputs of your S-function
- *    block.  The default datatype for signals in Simulink is double,
- *    but you can use other intrinsic C datatypes or even custom
- *    datatypes if you wish.  See Simulink document "Writing S-functions"
- *    for details on datatype topics.
+ *    Tight Coupling S-Function: mdlOutputs is the main computation hub.
+ *    On a new major time step (detected by newStepPending flag set in mdlUpdate),
+ *    it performs the full tight-coupling sequence. On algebraic loop iterations
+ *    (same step, updated inputs), FAST_Simulink_Trial restores and redoes the step.
  */
 static void mdlOutputs(SimStruct *S, int_T tid)
 {
 
-    /* 
-     *    For Fixed Step Code
-     *    -------------------
-     * If the Fortran code implements discrete states (implicitly or
-     * registered with Simulink, it doesn't matter), call the code
-     * from mdlUpdates() and save the output values in a DWork vector.  
-     * The variable step solver may call mdlOutputs() several
-     * times in between calls to mdlUpdate, and you must extract the 
-     * values from the DWork vector and copy them to the block output
-     * variables.
-     *
-     * Be sure that the ssSetDWorkDataType(S,0) declaration in 
-     * mdlInitializeSizes() uses SS_DOUBLE for the datatype when 
-     * this code is active.
-     */
-    
     double *InputAry  = (double *)ssGetDWork(S, WORKARY_INPUT);
     double *OutputAry = (double *)ssGetDWork(S, WORKARY_OUTPUT);
 
-    if (n_t_global == -1){ // first time to compute outputs:
+    getInputs(S, InputAry);
 
-       getInputs(S, InputAry);
+    bool Recalculate = false;
+    int i;
+    if (newStepPending) {
+        /* New major time step: full tight coupling computation */
+        newStepPending = 0;
+        algLoopCount = 0;
+        Recalculate = true;
+    } else {
+        /* Algebraic loop iteration: reset sub-step and redo with updated inputs */
+        for (i = 0; i < NumInputs; ++i) {
+            if (fabs(InputAry[i] - PreviousInputAry[i])/(fabs(InputAry[i])+1) > 1e-5) {
+               Recalculate = true;
+               break;
+            }
+        }
+    }
 
-       FAST_Start(&iTurb, &NumInputs, &NumOutputs, InputAry, OutputAry, &ErrStat, ErrMsg);
-       n_t_global = 0;
-       if (checkError(S)) return;
+    if (Recalculate) {
+        FAST_Simulink_Trial(&iTurb, &algLoopCount, &NumInputs, &NumOutputs,
+                            InputAry, OutputAry, &ErrStat, ErrMsg);
+        if (checkError(S)) return;
+        algLoopCount++;
 
+        // ssPrintf("[FAST_SFunc] t=%.6f iter=%d [%.6f,%.6f,%.6f,%.6f,%.6f,%.6f]\n",
+        //           ssGetT(S), algLoopCount,
+        //           InputAry[141], InputAry[142], InputAry[143],
+        //           InputAry[171], InputAry[172], InputAry[173]);
+        for (i = 0; i < NumInputs; ++i) PreviousInputAry[i] = InputAry[i];
     }
 
     setOutputs(S, OutputAry);
@@ -406,37 +415,16 @@ static void mdlOutputs(SimStruct *S, int_T tid)
  */
 static void mdlUpdate(SimStruct *S, int_T tid)
 {
+    if (n_t_global < 0) return;  // not initialized yet
 
-    /* 
-     *    For Fixed Step Code Only
-     *    ------------------------
-     * If your Fortran code runs at a fixed time step that advances
-     * each time you call it, it is best to call it here instead of
-     * in mdlOutputs().  The states in the Fortran code need not be
-     * continuous if you call your code from here.
-     */
-    double *InputAry  = (double *)ssGetDWork(S, WORKARY_INPUT);
-    double *OutputAry = (double *)ssGetDWork(S, WORKARY_OUTPUT);
+    ssPrintf("[FAST_SFunc] t=%.6f iter=%d\n", ssGetT(S), algLoopCount);
 
-    //time_T t = ssGetSampleTime(S, 0);
-
-    getInputs(S, InputAry);
-
-    /* ==== Call the Fortran routine (args are pass-by-reference) */
-    
-    FAST_Update(&iTurb, &NumInputs, &NumOutputs, InputAry, OutputAry, &EndEarly, &ErrStat, ErrMsg);
-    n_t_global = n_t_global + 1;
-
-   // For trim solution or any other reason to end early when there is no error
-   if (EndEarly) {
-      mdlTerminate(S);  // terminate after simulation completes (in case Simulink doesn't do so itself)
-      return;
-   }
-
-   // Handle errors
+    FAST_Simulink_Commit(&iTurb, &ErrStat, ErrMsg);
     if (checkError(S)) return;
 
-    setOutputs(S, OutputAry);
+    n_t_global = n_t_global + 1;
+    /* Signal the next accepted major step to mdlOutputs. */
+    newStepPending = 1;
 
 }
 #endif /* MDL_UPDATE */
@@ -475,4 +463,3 @@ static void mdlTerminate(SimStruct *S)
 #else
 #include "cg_sfun.h"       /* Code generation registration function */
 #endif
-

@@ -13,6 +13,7 @@ MODULE FAST_Data
 
    USE, INTRINSIC :: ISO_C_Binding
    USE NWTC_Library_Types
+   USE FAST_ModTypes, ONLY: INPUT_CURR
    USE FAST_Types
    USE FAST_Subs, only: ExitThisProgram_T, &
                         FAST_AdvanceToNextTimeStep_T, &
@@ -28,7 +29,8 @@ MODULE FAST_Data
                         FAST_Store_SubStep_T, &
                         FAST_UpdateStates_T, &
                         FAST_WriteOutput_T, &
-                        FillOutputAry_T
+                        FillOutputAry_T, &
+                        SrvD_SetExternalInputs
 
    IMPLICIT  NONE
    SAVE
@@ -1323,5 +1325,113 @@ subroutine FAST_CFD_Store_SubStep(iTurb_c, n_t_global, ErrStat_c, ErrMsg_c) BIND
    ErrMsg_c  = TRANSFER( ErrMsg//C_NULL_CHAR, ErrMsg_c )
 
 end subroutine FAST_CFD_Store_SubStep
+!==================================================================================================================================
+subroutine FAST_Simulink_FillOutputs(iTurb, NumOutputs_c, OutputAry, ErrStat_c, ErrMsg_c)
+   IMPLICIT NONE
+   INTEGER(IntKi),          INTENT(IN)  :: iTurb
+   INTEGER(C_INT),          INTENT(IN)  :: NumOutputs_c
+   REAL(C_DOUBLE),          INTENT(OUT) :: OutputAry(NumOutputs_c)
+   INTEGER(C_INT),          INTENT(OUT) :: ErrStat_c
+   CHARACTER(KIND=C_CHAR),  INTENT(OUT) :: ErrMsg_c(IntfStrLen)
+   REAL(ReKi)                           :: Outputs(NumOutputs_c-1)
+
+   IF (NumOutputs_c /= SIZE(Turbine(iTurb)%y_FAST%ChannelNames)) THEN
+      ErrStat_c = ErrID_Fatal
+      ErrMsg = 'FAST_Simulink:size of OutputAry is invalid.'
+   ELSE
+      CALL FillOutputAry_T(Turbine(iTurb), Outputs)
+      OutputAry(1) = Turbine(iTurb)%m_FAST%t_global
+      OutputAry(2:NumOutputs_c) = Outputs
+      ErrStat_c = ErrID_None
+      ErrMsg = ''
+   END IF
+   ErrMsg_c = TRANSFER(TRIM(ErrMsg)//C_NULL_CHAR, ErrMsg_c)
+end subroutine FAST_Simulink_FillOutputs
+!==================================================================================================================================
+!> Initialize the Simulink rollback interface and return the solution-zero outputs.
+subroutine FAST_Simulink_Init(iTurb_c, NumInputs_c, NumOutputs_c, InputAry, OutputAry, ErrStat_c, ErrMsg_c) &
+   BIND (C, NAME='FAST_Simulink_Init')
+   IMPLICIT NONE
+#ifndef IMPLICIT_DLLEXPORT
+!DEC$ ATTRIBUTES DLLEXPORT :: FAST_Simulink_Init
+!GCC$ ATTRIBUTES DLLEXPORT :: FAST_Simulink_Init
+#endif
+   INTEGER(C_INT),         INTENT(IN)  :: iTurb_c, NumInputs_c, NumOutputs_c
+   REAL(C_DOUBLE),         INTENT(IN)  :: InputAry(NumInputs_c)
+   REAL(C_DOUBLE),         INTENT(OUT) :: OutputAry(NumOutputs_c)
+   INTEGER(C_INT),         INTENT(OUT) :: ErrStat_c
+   CHARACTER(KIND=C_CHAR), INTENT(OUT) :: ErrMsg_c(IntfStrLen)
+   INTEGER(IntKi)                      :: iTurb
+
+   iTurb = INT(iTurb_c, IntKi) + 1
+   CALL FAST_SetExternalInputs(iTurb, NumInputs_c, InputAry, Turbine(iTurb)%m_FAST)
+   CALL FAST_CFD_Solution0(iTurb_c, ErrStat_c, ErrMsg_c)
+   IF (ErrStat_c >= AbortErrLev) RETURN
+   CALL FAST_CFD_InitIOarrays_SubStep(iTurb_c, ErrStat_c, ErrMsg_c)
+   IF (ErrStat_c >= AbortErrLev) RETURN
+   CALL FAST_Simulink_FillOutputs(iTurb, NumOutputs_c, OutputAry, ErrStat_c, ErrMsg_c)
+end subroutine FAST_Simulink_Init
+!==================================================================================================================================
+!> Restore the accepted state when requested, then compute one complete OpenFAST trial step.
+subroutine FAST_Simulink_Trial(iTurb_c, ResetBeforeTrial_c, NumInputs_c, NumOutputs_c, InputAry, OutputAry, ErrStat_c, ErrMsg_c) &
+   BIND (C, NAME='FAST_Simulink_Trial')
+   IMPLICIT NONE
+#ifndef IMPLICIT_DLLEXPORT
+!DEC$ ATTRIBUTES DLLEXPORT :: FAST_Simulink_Trial
+!GCC$ ATTRIBUTES DLLEXPORT :: FAST_Simulink_Trial
+#endif
+   INTEGER(C_INT),         INTENT(IN)  :: iTurb_c, ResetBeforeTrial_c, NumInputs_c, NumOutputs_c
+   REAL(C_DOUBLE),         INTENT(IN)  :: InputAry(NumInputs_c)
+   REAL(C_DOUBLE),         INTENT(OUT) :: OutputAry(NumOutputs_c)
+   INTEGER(C_INT),         INTENT(OUT) :: ErrStat_c
+   CHARACTER(KIND=C_CHAR), INTENT(OUT) :: ErrMsg_c(IntfStrLen)
+   INTEGER(C_INT)                      :: OneStep
+   INTEGER(IntKi)                      :: iTurb, iRot
+
+   iTurb = INT(iTurb_c, IntKi) + 1
+   IF (ResetBeforeTrial_c /= 0_C_INT) THEN
+      OneStep = 1_C_INT
+      CALL FAST_CFD_Reset_SubStep(iTurb_c, OneStep, ErrStat_c, ErrMsg_c)
+      IF (ErrStat_c >= AbortErrLev) RETURN
+   END IF
+   CALL FAST_CFD_Prework(iTurb_c, ErrStat_c, ErrMsg_c)
+   IF (ErrStat_c >= AbortErrLev) RETURN
+   ! InputAry contains the tightly coupled input at the trial-step target time.
+   ! Apply it after Prework so it replaces, rather than participates in, the
+   ! normal loose-coupling extrapolation performed by FAST_Prework_T.
+   CALL FAST_SetExternalInputs(iTurb, NumInputs_c, InputAry, Turbine(iTurb)%m_FAST)
+   IF (Turbine(iTurb)%p_FAST%CompServo == Module_SrvD) THEN
+      DO iRot = 1, Turbine(iTurb)%p_FAST%NRotors
+         CALL SrvD_SetExternalInputs(Turbine(iTurb)%p_FAST, Turbine(iTurb)%m_FAST, &
+                                     Turbine(iTurb)%SrvD%Input(INPUT_CURR,iRot))
+      END DO
+   END IF
+   CALL FAST_CFD_UpdateStates(iTurb_c, ErrStat_c, ErrMsg_c)
+   IF (ErrStat_c >= AbortErrLev) RETURN
+   CALL FAST_CFD_AdvanceToNextTimeStep(iTurb_c, ErrStat_c, ErrMsg_c)
+   IF (ErrStat_c >= AbortErrLev) RETURN
+   CALL FAST_Simulink_FillOutputs(iTurb, NumOutputs_c, OutputAry, ErrStat_c, ErrMsg_c)
+end subroutine FAST_Simulink_Trial
+!==================================================================================================================================
+!> Accept the current Simulink trial, write it when appropriate, and save it for rollback.
+subroutine FAST_Simulink_Commit(iTurb_c, ErrStat_c, ErrMsg_c) BIND (C, NAME='FAST_Simulink_Commit')
+   IMPLICIT NONE
+#ifndef IMPLICIT_DLLEXPORT
+!DEC$ ATTRIBUTES DLLEXPORT :: FAST_Simulink_Commit
+!GCC$ ATTRIBUTES DLLEXPORT :: FAST_Simulink_Commit
+#endif
+   INTEGER(C_INT),         INTENT(IN)  :: iTurb_c
+   INTEGER(C_INT),         INTENT(OUT) :: ErrStat_c
+   CHARACTER(KIND=C_CHAR), INTENT(OUT) :: ErrMsg_c(IntfStrLen)
+   INTEGER(IntKi)                      :: iTurb
+
+   iTurb = INT(iTurb_c, IntKi) + 1
+   CALL FAST_WriteOutput_T(t_initial, n_t_global, Turbine(iTurb), ErrStat, ErrMsg)
+   IF (ErrStat < AbortErrLev) THEN
+      CALL FAST_Store_SubStep_T(t_initial, n_t_global, Turbine(iTurb), ErrStat, ErrMsg)
+   END IF
+   ErrStat_c = ErrStat
+   ErrMsg_c = TRANSFER(TRIM(ErrMsg)//C_NULL_CHAR, ErrMsg_c)
+end subroutine FAST_Simulink_Commit
 !==================================================================================================================================
 END MODULE FAST_Data

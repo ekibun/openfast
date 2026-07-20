@@ -36,6 +36,9 @@ EXTERNAL_ROUTINE void FAST_CFD_WriteOutput(int * iTurb, int *ErrStat, char *ErrM
 EXTERNAL_ROUTINE void FAST_CFD_Step(int * iTurb, int *ErrStat, char *ErrMsg);
 EXTERNAL_ROUTINE void FAST_CFD_Reset_SubStep(int * iTurb, int * n_timesteps, int *ErrStat, char *ErrMsg);
 EXTERNAL_ROUTINE void FAST_CFD_Store_SubStep(int * iTurb, int * n_t_global,  int *ErrStat, char *ErrMsg);
+EXTERNAL_ROUTINE void FAST_Simulink_Init(int *iTurb, int *NumInputs, int *NumOutputs, double *InputAry, double *OutputAry, int *ErrStat, char *ErrMsg);
+EXTERNAL_ROUTINE void FAST_Simulink_Trial(int *iTurb, int *ResetBeforeTrial, int *NumInputs, int *NumOutputs, double *InputAry, double *OutputAry, int *ErrStat, char *ErrMsg);
+EXTERNAL_ROUTINE void FAST_Simulink_Commit(int *iTurb, int *ErrStat, char *ErrMsg);
 
 EXTERNAL_ROUTINE void FAST_HubPosition(int * iTurb, float * absolute_position, float * rotation_veocity, double * orientation_dcm, int *ErrStat, char *ErrMsg);
 

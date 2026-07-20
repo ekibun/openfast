@@ -33,7 +33,7 @@ if (ispc && built_with_visualStudio)
     libDir = '../../../build/bin';
     includeDir = '../../../modules/openfast-library/src';  % needed for visual studio builds to find "FAST_Library.h"
     outDir = libDir;
-    libName = 'OpenFAST-Simulink';
+    libName = 'OpenFAST-Simulink_Matlab_Release';
     
 else    
 %% defaults for cmake builds:
