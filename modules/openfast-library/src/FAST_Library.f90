@@ -1348,7 +1348,7 @@ subroutine FAST_Simulink_FillOutputs(iTurb, NumOutputs_c, OutputAry, ErrStat_c, 
    ErrMsg_c = TRANSFER(TRIM(ErrMsg)//C_NULL_CHAR, ErrMsg_c)
 end subroutine FAST_Simulink_FillOutputs
 !==================================================================================================================================
-!> Initialize the Simulink rollback interface and return the solution-zero outputs.
+!> Initialize the Simulink tight-coupling interface and return the solution-zero outputs.
 subroutine FAST_Simulink_Init(iTurb_c, NumInputs_c, NumOutputs_c, InputAry, OutputAry, ErrStat_c, ErrMsg_c) &
    BIND (C, NAME='FAST_Simulink_Init')
    IMPLICIT NONE
@@ -1367,35 +1367,32 @@ subroutine FAST_Simulink_Init(iTurb_c, NumInputs_c, NumOutputs_c, InputAry, Outp
    CALL FAST_SetExternalInputs(iTurb, NumInputs_c, InputAry, Turbine(iTurb)%m_FAST)
    CALL FAST_CFD_Solution0(iTurb_c, ErrStat_c, ErrMsg_c)
    IF (ErrStat_c >= AbortErrLev) RETURN
-   CALL FAST_CFD_InitIOarrays_SubStep(iTurb_c, ErrStat_c, ErrMsg_c)
-   IF (ErrStat_c >= AbortErrLev) RETURN
    CALL FAST_Simulink_FillOutputs(iTurb, NumOutputs_c, OutputAry, ErrStat_c, ErrMsg_c)
 end subroutine FAST_Simulink_Init
 !==================================================================================================================================
-!> Restore the accepted state when requested, then compute one complete OpenFAST trial step.
-subroutine FAST_Simulink_Trial(iTurb_c, ResetBeforeTrial_c, NumInputs_c, NumOutputs_c, InputAry, OutputAry, ErrStat_c, ErrMsg_c) &
+!> Recompute the predicted state for one Simulink trial without advancing the accepted OpenFAST state.
+subroutine FAST_Simulink_Trial(iTurb_c, TrialIteration_c, NumInputs_c, NumOutputs_c, InputAry, OutputAry, ErrStat_c, ErrMsg_c) &
    BIND (C, NAME='FAST_Simulink_Trial')
    IMPLICIT NONE
 #ifndef IMPLICIT_DLLEXPORT
 !DEC$ ATTRIBUTES DLLEXPORT :: FAST_Simulink_Trial
 !GCC$ ATTRIBUTES DLLEXPORT :: FAST_Simulink_Trial
 #endif
-   INTEGER(C_INT),         INTENT(IN)  :: iTurb_c, ResetBeforeTrial_c, NumInputs_c, NumOutputs_c
+   INTEGER(C_INT),         INTENT(IN)  :: iTurb_c, TrialIteration_c, NumInputs_c, NumOutputs_c
    REAL(C_DOUBLE),         INTENT(IN)  :: InputAry(NumInputs_c)
    REAL(C_DOUBLE),         INTENT(OUT) :: OutputAry(NumOutputs_c)
    INTEGER(C_INT),         INTENT(OUT) :: ErrStat_c
    CHARACTER(KIND=C_CHAR), INTENT(OUT) :: ErrMsg_c(IntfStrLen)
-   INTEGER(C_INT)                      :: OneStep
    INTEGER(IntKi)                      :: iTurb, iRot
 
    iTurb = INT(iTurb_c, IntKi) + 1
-   IF (ResetBeforeTrial_c /= 0_C_INT) THEN
-      OneStep = 1_C_INT
-      CALL FAST_CFD_Reset_SubStep(iTurb_c, OneStep, ErrStat_c, ErrMsg_c)
+   ! Match the no-substep OpenFAST C++ coupling sequence: Prework once at
+   ! the start of the physical time step, then overwrite STATE_PRED on
+   ! every outer/algebraic-loop iteration.
+   IF (TrialIteration_c == 0_C_INT) THEN
+      CALL FAST_CFD_Prework(iTurb_c, ErrStat_c, ErrMsg_c)
       IF (ErrStat_c >= AbortErrLev) RETURN
    END IF
-   CALL FAST_CFD_Prework(iTurb_c, ErrStat_c, ErrMsg_c)
-   IF (ErrStat_c >= AbortErrLev) RETURN
    ! InputAry contains the tightly coupled input at the trial-step target time.
    ! Apply it after Prework so it replaces, rather than participates in, the
    ! normal loose-coupling extrapolation performed by FAST_Prework_T.
@@ -1408,12 +1405,10 @@ subroutine FAST_Simulink_Trial(iTurb_c, ResetBeforeTrial_c, NumInputs_c, NumOutp
    END IF
    CALL FAST_CFD_UpdateStates(iTurb_c, ErrStat_c, ErrMsg_c)
    IF (ErrStat_c >= AbortErrLev) RETURN
-   CALL FAST_CFD_AdvanceToNextTimeStep(iTurb_c, ErrStat_c, ErrMsg_c)
-   IF (ErrStat_c >= AbortErrLev) RETURN
    CALL FAST_Simulink_FillOutputs(iTurb, NumOutputs_c, OutputAry, ErrStat_c, ErrMsg_c)
 end subroutine FAST_Simulink_Trial
 !==================================================================================================================================
-!> Accept the current Simulink trial, write it when appropriate, and save it for rollback.
+!> Accept the current Simulink trial, advance the predicted state, and write its output.
 subroutine FAST_Simulink_Commit(iTurb_c, ErrStat_c, ErrMsg_c) BIND (C, NAME='FAST_Simulink_Commit')
    IMPLICIT NONE
 #ifndef IMPLICIT_DLLEXPORT
@@ -1423,15 +1418,9 @@ subroutine FAST_Simulink_Commit(iTurb_c, ErrStat_c, ErrMsg_c) BIND (C, NAME='FAS
    INTEGER(C_INT),         INTENT(IN)  :: iTurb_c
    INTEGER(C_INT),         INTENT(OUT) :: ErrStat_c
    CHARACTER(KIND=C_CHAR), INTENT(OUT) :: ErrMsg_c(IntfStrLen)
-   INTEGER(IntKi)                      :: iTurb
-
-   iTurb = INT(iTurb_c, IntKi) + 1
-   CALL FAST_WriteOutput_T(t_initial, n_t_global, Turbine(iTurb), ErrStat, ErrMsg)
-   IF (ErrStat < AbortErrLev) THEN
-      CALL FAST_Store_SubStep_T(t_initial, n_t_global, Turbine(iTurb), ErrStat, ErrMsg)
-   END IF
-   ErrStat_c = ErrStat
-   ErrMsg_c = TRANSFER(TRIM(ErrMsg)//C_NULL_CHAR, ErrMsg_c)
+   CALL FAST_CFD_AdvanceToNextTimeStep(iTurb_c, ErrStat_c, ErrMsg_c)
+   IF (ErrStat_c >= AbortErrLev) RETURN
+   CALL FAST_CFD_WriteOutput(iTurb_c, ErrStat_c, ErrMsg_c)
 end subroutine FAST_Simulink_Commit
 !==================================================================================================================================
 END MODULE FAST_Data

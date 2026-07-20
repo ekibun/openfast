@@ -358,8 +358,9 @@ static void mdlInitializeSampleTimes(SimStruct *S)
  * Abstract:
  *    Tight Coupling S-Function: mdlOutputs is the main computation hub.
  *    On a new major time step (detected by newStepPending flag set in mdlUpdate),
- *    it performs the full tight-coupling sequence. On algebraic loop iterations
- *    (same step, updated inputs), FAST_Simulink_Trial restores and redoes the step.
+ *    it performs Prework and computes the predicted state. On algebraic loop
+ *    iterations (same step, updated inputs), FAST_Simulink_Trial overwrites that
+ *    prediction without advancing the accepted OpenFAST state.
  */
 static void mdlOutputs(SimStruct *S, int_T tid)
 {
@@ -377,7 +378,7 @@ static void mdlOutputs(SimStruct *S, int_T tid)
         algLoopCount = 0;
         Recalculate = true;
     } else {
-        /* Algebraic loop iteration: reset sub-step and redo with updated inputs */
+        /* Reuse outputs for small Jacobian perturbations so the algebraic-loop solve reduces to fixed-point iteration */
         for (i = 0; i < NumInputs; ++i) {
             if (fabs(InputAry[i] - PreviousInputAry[i])/(fabs(InputAry[i])+1) > 1e-5) {
                Recalculate = true;
